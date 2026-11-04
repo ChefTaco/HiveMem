@@ -7,6 +7,7 @@ import { createServer as createHttpsServer } from "node:https";
 import { envSchema, packageVersion, PACKAGE_NAME, probeQdrant, redactUrl, resolveConfig, storageStatus, type ServerConfig } from "./config.js";
 import { qdrantPersistenceFromEnv } from "./persistence.js";
 import { issueToken, ISSUE_TOKEN_MAX_TTL_SECONDS, resolveIssueTokenRequest, signingSecretProblem } from "./issue-token.js";
+import { initializeAccount } from "./initial-account.js";
 import { createHiveMemHandler } from "./server.js";
 import { InMemoryHiveMemStore } from "./store.js";
 import { acquireWriterLock } from "./writer-lock.js";
@@ -205,6 +206,7 @@ async function runStart(): Promise<void> {
     throw new CliError(`cannot load data from Qdrant at ${redactUrl(config.qdrantUrl)}: ${(error as Error).message}`);
   }
   const store = new InMemoryHiveMemStore({ ...(snapshot ? { snapshot } : {}), ...(persistence ? { persistence } : {}) });
+  await initializeAccount(store, config.storagePath, process.env);
   const workerEnabled = configureStartupWorker(store, process.env);
   await store.flushPersistence();
   const handler = createHiveMemHandler({

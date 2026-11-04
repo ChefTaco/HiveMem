@@ -270,6 +270,7 @@ export function envSchema(): EnvSchema {
       { name: "HIVEMEM_RENEWAL_SECRET", required: false, secret: true, generate: "hex32", description: "Independent secret for long-lived token renewal grants (POST /v1/auth/renew). Must differ from HIVEMEM_JWT_SECRET; unset disables renewal." },
       { name: "HIVEMEM_TS_CORE_HOST", required: false, secret: false, default: DEFAULT_HOST, description: "Interface to listen on. Use 0.0.0.0 only behind TLS or a trusted proxy." },
       { name: "HIVEMEM_WEB_PORT", required: false, secret: false, default: String(DEFAULT_PORT), description: "TCP port to listen on (HIVEMEM_TS_CORE_PORT overrides it)." },
+      { name: "HIVEMEM_INITIAL_ACCOUNT_FILE", required: false, secret: false, description: "Protected first-start identity enrollment contract. Requires an empty store or the exact previous bootstrap marker; never links accounts by name or email." },
       { name: "HIVEMEM_STORAGE_PATH", required: false, secret: false, default: "${HIVE_HOME:-~/.hive}/memory", description: "Local state directory: writer lock, write-recovery journal, and token revocation list. Created with mode 0700." },
       { name: "HIVEMEM_TS_PERSISTENCE", required: false, secret: false, default: "qdrant", description: "\"qdrant\" stores data in Qdrant. \"memory\" is a volatile opt-in for tests and demos; all data is lost when the server stops." },
       { name: "HIVEMEM_QDRANT_URL", required: false, secret: false, default: DEFAULT_QDRANT_URL, description: "Qdrant REST base URL. Keep Qdrant bound to localhost or a private network." },

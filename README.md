@@ -1,5 +1,13 @@
 # HiveMem
 
+Fresh suite initialization may set `HIVEMEM_INITIAL_ACCOUNT_FILE` to a protected,
+server-owned mode-0600 JSON file: `{"schema":1,"id":"synthetic-new-memory-account","displayName":"Operator"}`.
+It enrolls that exact identity only in an empty store, issues no bearer token,
+and records completion after durable persistence. Restarts preserve its ID and
+credential generation; changed inputs, unrelated existing accounts or a missing
+persisted identity require reviewed enrollment or recovery. Rehearsals skip this
+initializer. Oathweave issuer/subject mappings remain explicit product configuration.
+
 Part of the Hive:Magnus ecosystem. This repository starts from a reviewed public
 Hive source snapshot; `provenance.json` records its revision and original hashes.
 

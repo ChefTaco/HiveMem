@@ -1,5 +1,8 @@
 # Changelog
 
+- Add protected first-start memory identity enrollment with durable completion,
+  stable IDs, explicit existing-store refusal and rehearsal containment.
+
 ## Unreleased ecosystem extraction
 
 Rehearsal startup disables background workers and retains interrupted queue claims without recovery or dispatch.
