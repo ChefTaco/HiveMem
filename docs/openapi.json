@@ -1,4 +1,810 @@
 {
+  "components": {
+    "schemas": {
+      "MemoryProfile": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "agent"
+            ],
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "workspace_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "agent_id",
+          "display_name",
+          "role",
+          "scopes",
+          "workspace_ids"
+        ],
+        "type": "object"
+      },
+      "Workspace": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "members": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "added_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "agent_id": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "role": {
+                  "enum": [
+                    "viewer",
+                    "member",
+                    "admin",
+                    "owner"
+                  ],
+                  "type": "string"
+                },
+                "scopes": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "updated_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "agent_id",
+                "role",
+                "scopes",
+                "added_by",
+                "created_at",
+                "updated_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "owner_agent_id": {
+            "type": "string"
+          },
+          "policy": {
+            "additionalProperties": false,
+            "properties": {
+              "agent_overrides": {
+                "additionalProperties": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "allowed_scopes": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "consolidation_cadence_seconds": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "reasoning_provider": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "retention_days": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "sanitization": {
+                "additionalProperties": false,
+                "properties": {
+                  "deny_regexes": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "detect_pii": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "detect_secrets": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "mode": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "warn",
+                          "redact",
+                          "reject"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "mode",
+                  "detect_pii",
+                  "detect_secrets",
+                  "deny_regexes"
+                ],
+                "type": "object"
+              },
+              "session_overrides": {
+                "additionalProperties": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "webhooks_enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "retention_days",
+              "allowed_scopes",
+              "reasoning_provider",
+              "consolidation_cadence_seconds",
+              "webhooks_enabled",
+              "sanitization",
+              "agent_overrides",
+              "session_overrides"
+            ],
+            "type": "object"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "owner_agent_id",
+          "title",
+          "description",
+          "metadata",
+          "policy",
+          "members",
+          "created_at",
+          "updated_at",
+          "deleted_at"
+        ],
+        "type": "object"
+      },
+      "WorkspaceCreate": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "members": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "added_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "agent_id": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "role": {
+                  "enum": [
+                    "viewer",
+                    "member",
+                    "admin",
+                    "owner"
+                  ],
+                  "type": "string"
+                },
+                "scopes": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "updated_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "agent_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "policy": {
+            "additionalProperties": false,
+            "properties": {
+              "agent_overrides": {
+                "additionalProperties": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "allowed_scopes": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "consolidation_cadence_seconds": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "reasoning_provider": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "retention_days": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "sanitization": {
+                "additionalProperties": false,
+                "properties": {
+                  "deny_regexes": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "detect_pii": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "detect_secrets": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "mode": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "warn",
+                          "redact",
+                          "reject"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "mode",
+                  "detect_pii",
+                  "detect_secrets",
+                  "deny_regexes"
+                ],
+                "type": "object"
+              },
+              "session_overrides": {
+                "additionalProperties": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "webhooks_enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "retention_days",
+              "allowed_scopes",
+              "reasoning_provider",
+              "consolidation_cadence_seconds",
+              "webhooks_enabled",
+              "sanitization",
+              "agent_overrides",
+              "session_overrides"
+            ],
+            "type": "object"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id"
+        ],
+        "type": "object"
+      },
+      "WorkspaceMember": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "added_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "enum": [
+              "viewer",
+              "member",
+              "admin",
+              "owner"
+            ],
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "agent_id",
+          "role",
+          "scopes",
+          "added_by",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "WorkspaceMemberUpdate": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "viewer",
+              "member",
+              "admin",
+              "owner"
+            ],
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "role",
+          "scopes"
+        ],
+        "type": "object"
+      },
+      "WorkspacePolicy": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "agent_overrides": {
+            "additionalProperties": {
+              "additionalProperties": {},
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "allowed_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "consolidation_cadence_seconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "reasoning_provider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retention_days": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "sanitization": {
+            "additionalProperties": false,
+            "properties": {
+              "deny_regexes": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "detect_pii": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "detect_secrets": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "mode": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "warn",
+                      "redact",
+                      "reject"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "mode",
+              "detect_pii",
+              "detect_secrets",
+              "deny_regexes"
+            ],
+            "type": "object"
+          },
+          "session_overrides": {
+            "additionalProperties": {
+              "additionalProperties": {},
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "webhooks_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "retention_days",
+          "allowed_scopes",
+          "reasoning_provider",
+          "consolidation_cadence_seconds",
+          "webhooks_enabled",
+          "sanitization",
+          "agent_overrides",
+          "session_overrides"
+        ],
+        "type": "object"
+      },
+      "WorkspaceUpdate": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "policy": {
+            "additionalProperties": false,
+            "properties": {
+              "agent_overrides": {
+                "additionalProperties": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "allowed_scopes": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "consolidation_cadence_seconds": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "reasoning_provider": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "retention_days": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "sanitization": {
+                "additionalProperties": false,
+                "properties": {
+                  "deny_regexes": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "detect_pii": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "detect_secrets": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "mode": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "warn",
+                          "redact",
+                          "reject"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "mode",
+                  "detect_pii",
+                  "detect_secrets",
+                  "deny_regexes"
+                ],
+                "type": "object"
+              },
+              "session_overrides": {
+                "additionalProperties": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "webhooks_enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "retention_days",
+              "allowed_scopes",
+              "reasoning_provider",
+              "consolidation_cadence_seconds",
+              "webhooks_enabled",
+              "sanitization",
+              "agent_overrides",
+              "session_overrides"
+            ],
+            "type": "object"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
   "info": {
     "description": "Core HiveMem REST surface. See HIVEMEM_API.md for the full reference.",
     "title": "HiveMem TypeScript Core API",
@@ -196,6 +1002,37 @@
         "summary": "List peer conclusions (supports paginate and cursor)"
       }
     },
+    "/v1/profile": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryProfile"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Current product identity without bearer claims"
+      }
+    },
     "/v1/queue/jobs": {
       "get": {
         "responses": {
@@ -236,21 +1073,385 @@
     },
     "/v1/workspaces": {
       "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_deleted",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Success"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Workspace"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Permitted workspaces"
           }
         },
-        "summary": "List workspaces"
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List permitted workspaces, optionally including archived records"
       },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create workspace; an archived ID cannot be reused"
+      }
+    },
+    "/v1/workspaces/{workspaceId}": {
+      "delete": {
+        "responses": {
+          "204": {
+            "description": "Archived"
+          }
+        },
+        "summary": "Archive workspace as owner; memories and membership are retained"
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read workspace"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update workspace as owner or administrator"
+      }
+    },
+    "/v1/workspaces/{workspaceId}/members": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceMember"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Workspace members"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List workspace members"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/v1/workspaces/{workspaceId}/members/{agentId}": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Remove workspace member; the owner cannot be removed"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "agentId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceMemberUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update workspace membership"
+      }
+    },
+    "/v1/workspaces/{workspaceId}/restore": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Restore archived workspace as owner without replacing its identity or membership"
+      }
+    },
+    "/v1/workspaces/{workspaceId}/schedule-dream": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "post": {
         "responses": {
           "200": {
             "description": "Success"
           }
         },
-        "summary": "Create workspace"
+        "summary": "Schedule workspace consolidation"
       }
+    },
+    "/v1/workspaces/{workspaceId}/settings": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Resolve workspace policy and optional agent/session overrides"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
     }
   },
   "servers": [

@@ -1427,3 +1427,12 @@ PYTHONPATH=/path/to/hermes-agent pytest hermes-plugin/tests -m hermes -v
 ```
 
 Most tests use a fake HiveMem HTTP server. Tests marked `hermes` run the real Hermes interface when Hermes Agent is importable.
+
+### Browser profile and workspace recovery
+
+`GET /v1/profile` returns only the current linked agent ID, display name, product role,
+scopes and optional workspace restrictions. Native `/v1/auth/me` remains available.
+Archived workspace IDs cannot be reused. `POST /v1/workspaces/:id/restore` requires
+`workspaces:write` and workspace ownership (or product administrator authority),
+retaining the workspace identity, members, policy and memories. Workspace administrators
+cannot grant themselves ownership. OpenAPI includes the owned browser contracts.

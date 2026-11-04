@@ -1,5 +1,9 @@
 # Changelog
 
+- Reserve archived workspace IDs, require ownership for restoration or owner grants,
+  and preserve token workspace restrictions for administrator listings. Add an owned
+  browser profile/workspace API contract without changing native authentication.
+
 - Add protected first-start memory identity enrollment with durable completion,
   stable IDs, explicit existing-store refusal and rehearsal containment.
 

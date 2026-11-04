@@ -3024,6 +3024,7 @@ export class InMemoryHiveMemStore {
     const parsed = parseWorkspaceCreate(body);
     if (Array.isArray(principal.rawClaims.workspace_ids) && !principal.rawClaims.workspace_ids.includes(parsed.workspace_id)) throw new ForbiddenError("Token does not permit this workspace");
     const existing = this.workspaces.get(parsed.workspace_id);
+    if (existing?.deleted_at) throw new ConflictError("Workspace ID is archived and reserved; its owner must restore it or choose a new ID");
     if (existing && !existing.deleted_at) {
       this.assertWorkspacePermission(principal, parsed.workspace_id, "read");
       return existing;
@@ -3054,7 +3055,7 @@ export class InMemoryHiveMemStore {
     const records = [...this.workspaces.values()]
       .filter((workspace) => includeDeleted || !workspace.deleted_at)
       .filter((workspace) => !ownerAgentId || workspace.owner_agent_id === ownerAgentId)
-      .filter((workspace) => isAdmin(principal) || this.hasWorkspacePermission(principal, workspace, "read"))
+      .filter((workspace) => this.hasWorkspacePermission(principal, workspace, "read"))
       .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
     return records.slice(offset, offset + limit);
   }
@@ -3083,6 +3084,29 @@ export class InMemoryHiveMemStore {
     this.queuePersistence();
   }
 
+  restoreWorkspace(principal: AuthPrincipal, workspaceId: string): WorkspaceRecord {
+    const workspace = this.workspaces.get(workspaceId);
+    if (!workspace) throw new NotFoundError("Workspace not found");
+    this.assertWorkspaceRecordPermission(principal, workspace, "owner");
+    if (!workspace.deleted_at) return workspace;
+    const restored = { ...workspace, deleted_at: null, updated_at: nowIso() };
+    this.workspaces.set(workspaceId, restored);
+    this.queuePersistence();
+    return restored;
+  }
+
+  browserProfile(principal: AuthPrincipal) {
+    const agent = this.getAgent(principal, principal.agentId);
+    return {
+      agent_id: agent.agent_id,
+      display_name: agent.display_name,
+      role: isAdmin(principal) ? "admin" as const : "agent" as const,
+      scopes: [...principal.scopes],
+      workspace_ids: Array.isArray(principal.rawClaims.workspace_ids)
+        ? principal.rawClaims.workspace_ids.filter((id): id is string => typeof id === "string") : null,
+    };
+  }
+
   listWorkspaceMembers(principal: AuthPrincipal, workspaceId: string): WorkspaceMember[] {
     return this.getWorkspace(principal, workspaceId).members;
   }
@@ -3092,6 +3116,7 @@ export class InMemoryHiveMemStore {
     this.assertWorkspaceRecordPermission(principal, workspace, "admin");
     const raw = asJsonObject(body, "workspace member");
     const role = parseEnum(raw.role, "role", workspaceRoles, "member");
+    if (role === "owner" || workspace.members.some(member => member.agent_id === agentId && member.role === "owner")) this.assertWorkspaceRecordPermission(principal, workspace, "owner");
     if (agentId === workspace.owner_agent_id && role !== "owner") throw new BadRequestError("Workspace owner role cannot be downgraded");
     const timestamp = nowIso();
     const members = workspace.members.filter((member) => member.agent_id !== agentId);
@@ -3106,6 +3131,7 @@ export class InMemoryHiveMemStore {
     const workspace = this.getWorkspaceForMutation(workspaceId);
     this.assertWorkspaceRecordPermission(principal, workspace, "admin");
     if (agentId === workspace.owner_agent_id) throw new BadRequestError("Workspace owner cannot be removed");
+    if (workspace.members.some(member => member.agent_id === agentId && member.role === "owner")) this.assertWorkspaceRecordPermission(principal, workspace, "owner");
     const timestamp = nowIso();
     const updated: WorkspaceRecord = { ...workspace, members: normalizeWorkspaceMembers(workspace.owner_agent_id, workspace.members.filter((member) => member.agent_id !== agentId), principal.agentId), updated_at: timestamp };
     this.workspaces.set(workspaceId, updated);

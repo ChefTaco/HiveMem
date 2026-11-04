@@ -736,6 +736,10 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
         await sendJson(response, 200, store.authPrincipal(principal));
         return;
       }
+      if (method === "GET" && url.pathname === "/v1/profile") {
+        await sendJson(response, 200, store.browserProfile(principal));
+        return;
+      }
       if (method === "POST" && url.pathname === "/v1/auth/tokens") {
         await sendJson(response, 201, issueTokenFromBody(await readBody(request), principal, jwtSecret, store));
         return;
@@ -978,6 +982,10 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
           return;
         }
         const workspaceId = parts[2];
+        if (workspaceId && parts.length === 4 && parts[3] === "restore" && method === "POST") {
+          await sendJson(response, 200, store.restoreWorkspace(principal, workspaceId));
+          return;
+        }
         if (workspaceId && parts.length === 3 && method === "GET") {
           await sendJson(response, 200, store.getWorkspace(principal, workspaceId, url.searchParams.get("include_deleted") === "true"));
           return;
