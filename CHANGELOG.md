@@ -2,6 +2,8 @@
 
 ## Unreleased ecosystem extraction
 
+Rehearsal startup disables background workers and retains interrupted queue claims without recovery or dispatch.
+
 Independent product snapshot, container build and direct Oathweave authorization with explicit product-account links. Existing machine protocols remain available. Suite lifecycle and migration acceptance remain pending.
 
 All notable changes to this project will be documented in this file.

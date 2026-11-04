@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { configureStartupWorker } from './worker-startup.js';
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { createServer as createHttpServer, type Server } from "node:http";
@@ -204,9 +205,7 @@ async function runStart(): Promise<void> {
     throw new CliError(`cannot load data from Qdrant at ${redactUrl(config.qdrantUrl)}: ${(error as Error).message}`);
   }
   const store = new InMemoryHiveMemStore({ ...(snapshot ? { snapshot } : {}), ...(persistence ? { persistence } : {}) });
-  const workerEnabled = process.env.HIVEMEM_WORKER_ENABLED !== "false";
-  store.configureWorker(workerEnabled);
-  store.recoverInterruptedJobs();
+  const workerEnabled = configureStartupWorker(store, process.env);
   await store.flushPersistence();
   const handler = createHiveMemHandler({
     store,

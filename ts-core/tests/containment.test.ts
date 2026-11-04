@@ -1,3 +1,4 @@
+import { configureStartupWorker } from '../src/worker-startup.js';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import test from 'node:test';
@@ -293,4 +294,20 @@ test('issuance honors an absolute actor deadline and validates before rotating c
     const claims = JSON.parse(Buffer.from(value.token.split('.')[1]!, 'base64url').toString());
     assert.deepEqual(claims.workspace_ids, ['default']); assert.equal(claims.token_generation, before + 1);
   } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+});
+
+
+test('rehearsal startup leaves persisted queue claims intact and suppresses workers', async () => {
+  const source = new InMemoryHiveMemStore();
+  source.createMemory(admin, { content: 'rehearsal fixture', type: 'semantic', scope: 'private' });
+  const snapshot = source.snapshot();
+  snapshot.queueJobs[0] = { ...snapshot.queueJobs[0]!, status: 'in_progress', locked_at: new Date().toISOString() };
+  let saves = 0;
+  const store = new InMemoryHiveMemStore({ snapshot, persistence: { kind: 'qdrant', load: async () => snapshot, save: async () => { saves++; } } });
+  const before = structuredClone(store.snapshot());
+  assert.equal(configureStartupWorker(store, { HIVE_REHEARSAL: 'true', HIVEMEM_WORKER_ENABLED: 'true' }), false);
+  await store.flushPersistence();
+  assert.equal(store.workerHealth().state, 'disabled');
+  assert.deepEqual(store.snapshot(), before);
+  assert.equal(saves, 0);
 });
