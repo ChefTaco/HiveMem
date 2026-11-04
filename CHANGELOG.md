@@ -20,3 +20,5 @@ Initial public release.
 - HMAC-signed webhooks with SSRF-safe destination policy, metrics, audit log, and an operator dashboard.
 - TypeScript (`@hivemagnus/hivemem-sdk`) and Python SDKs, and a Hermes Agent memory-provider plugin.
 - `@hivemagnus/hivemem-server` on npm, with a `hivemem-server` command (`start`, `check`, `env-schema`, `issue-token`, `--env-file`). It defaults to Qdrant persistence and refuses to start when Qdrant is unreachable (`HIVEMEM_TS_PERSISTENCE=memory` opts in to volatile storage). Without `HIVEMEM_STORAGE_PATH`, local state goes to `${HIVE_HOME:-~/.hive}/memory`.
+
+Container listeners bind to the container network while native loopback defaults remain available.
