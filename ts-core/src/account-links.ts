@@ -5,6 +5,7 @@ const link = z
     issuer: z.url(),
     subject: z.string().min(1).max(256),
     localId: z.string().min(1).max(256),
+    credentialGeneration: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   })
   .strict();
 export function parseAccountLinks(raw: string) {
@@ -22,11 +23,17 @@ export function linkedLocalId(
   links: readonly AccountLink[],
   identity: { issuer: string; subject: string },
 ): string {
+  return linkedAccount(links, identity).localId;
+}
+export function linkedAccount(
+  links: readonly AccountLink[],
+  identity: { issuer: string; subject: string },
+): AccountLink {
   const matches = links.filter(
     (link) =>
       link.issuer === identity.issuer && link.subject === identity.subject,
   );
   if (matches.length !== 1)
     throw new Error("An explicit product account link is required");
-  return matches[0]!.localId;
+  return matches[0]!;
 }

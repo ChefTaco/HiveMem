@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseAccountLinks, linkedLocalId } from "../src/account-links.js";
+import { parseAccountLinks, linkedLocalId, linkedAccount } from "../src/account-links.js";
 test("product account links preserve exact IDs without email or cross-issuer matching", () => {
   const identity = {
     issuer: "https://identity.example.com",
@@ -22,4 +22,8 @@ test("product account links preserve exact IDs without email or cross-issuer mat
   assert.throws(() =>
     parseAccountLinks(JSON.stringify([{ ...row, email: "alice@example.com" }])),
   );
+  assert.equal(linkedAccount(parseAccountLinks(JSON.stringify([{...row,credentialGeneration:7}])),identity).credentialGeneration,7);
+  for (const credentialGeneration of [-1, 0.5, '7', null]) {
+    assert.throws(()=>parseAccountLinks(JSON.stringify([{...row,credentialGeneration}])));
+  }
 });

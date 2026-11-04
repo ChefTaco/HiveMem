@@ -1,4 +1,4 @@
-import { parseAccountLinks, linkedLocalId, type AccountLink } from './account-links.js';
+import { parseAccountLinks, linkedAccount, type AccountLink } from './account-links.js';
 import { maintenanceActive } from './release/runtime.js';
 import { metadata, findPackageRoot } from './release/runtime.js';
 const releaseMetadata = () => metadata(findPackageRoot(import.meta.url, '@hivemagnus/hivemem-server'));
@@ -411,10 +411,14 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
         if (algorithm === 'RS256') {
           let identity: OathweaveIdentity;
           try { identity=await verifyIdentity(header.slice(7)); } catch { throw new AuthError(401,'Invalid or revoked identity session'); }
-          let agentId:string;
-          try {agentId=linkedLocalId(accountLinks,identity);} catch {throw new AuthError(403,'An explicit memory account link is required');}
+          let link: AccountLink;
+          try {link=linkedAccount(accountLinks,identity);} catch {throw new AuthError(403,'An explicit memory account link is required');}
+          const agentId = link.localId;
           const scopes=identity.permissions.filter(value=>value.startsWith('hivemem:')).map(value=>value.slice('hivemem:'.length));
-          resourcePrincipals.set(request,{agentId,scopes,rawClaims:{sub:agentId,role:'agent',scope:scopes.join(' '),iss:identity.issuer,session_id:identity.sessionId}});
+          const principal: AuthPrincipal = {agentId,scopes,rawClaims:{sub:agentId,role:'agent',scope:scopes.join(' '),iss:identity.issuer,session_id:identity.sessionId,token_generation:link.credentialGeneration ?? 0}};
+          try {store.getAgent(principal,agentId);} catch {throw new AuthError(403,'The linked memory account does not exist');}
+          store.assertCredentialActive(principal);
+          resourcePrincipals.set(request,principal);
         }
       }
 

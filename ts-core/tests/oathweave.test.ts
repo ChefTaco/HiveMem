@@ -5,6 +5,11 @@ import { createServer } from "node:http";
 import { createHiveMemHandler } from "../src/server.js";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createOathweaveVerifier } from "../src/oathweave.js";
+import { InMemoryHiveMemStore } from "../src/store.js";
+import { signToken } from "../src/auth.js";
+import type { AuthPrincipal } from "../src/types.js";
+
+const operator: AuthPrincipal = {agentId:'synthetic-operator',scopes:['*'],rawClaims:{role:'admin'}};
 
 test("resource verification rejects wrong audiences and revoked sessions", async () => {
   const keys = await generateKeyPair("RS256");
@@ -48,7 +53,10 @@ test("resource verification rejects wrong audiences and revoked sessions", async
 });
 
 test("HTTP keeps identity reads scoped and prevents role-based write escalation", async () => {
+  const store=new InMemoryHiveMemStore();
+  store.registerAgent(operator,{agent_id:'existing-agent',display_name:'Synthetic existing agent'},'obviously-fake-native-token');
   const handler = createHiveMemHandler({
+    store,
     jwtSecret: "f".repeat(64),
     oathweaveAccountLinks: [
       {
@@ -110,5 +118,39 @@ test("HTTP keeps identity reads scoped and prevents role-based write escalation"
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
+  }
+});
+
+test('browser links require an existing active account and the reviewed credential generation',async()=>{
+  const secret='f'.repeat(64);
+  const store=new InMemoryHiveMemStore();
+  const link={issuer:'https://identity.example.com',subject:'fake-user',localId:'existing-agent',credentialGeneration:1};
+  const handler=createHiveMemHandler({jwtSecret:secret,store,oathweaveAccountLinks:[link],verifyOathweave:async()=>({...link,sessionId:'fake-session',roles:[],permissions:['hivemem:memories:read'],displayName:'Synthetic person'})});
+  const server=createServer(handler).listen(0,'127.0.0.1');
+  await once(server,'listening');
+  const address=server.address();
+  assert(address && typeof address==='object');
+  const origin=`http://127.0.0.1:${address.port}`;
+  const headers={Authorization:`Bearer ${Buffer.from(JSON.stringify({alg:'RS256'})).toString('base64url')}.obviously-fake-fixture.signature`};
+  const read=()=>fetch(origin+'/v1/memories/browse',{headers});
+  try {
+    assert.equal((await read()).status,403);
+    assert.throws(()=>store.getAgent(operator,link.localId));
+    store.registerAgent(operator,{agent_id:link.localId,display_name:'Synthetic existing agent'},'obviously-fake-native-token');
+    assert.equal((await read()).status,403); // Generation zero cannot accept a generation-one link.
+    store.rotateAgentCredentials(operator,link.localId);
+    assert.equal((await read()).status,200);
+    const native=signToken(secret,{sub:link.localId,role:'agent',scope:'memories:read',token_generation:0,exp:Math.floor(Date.now()/1000)+300});
+    assert.equal((await fetch(origin+'/v1/memories/browse',{headers:{Authorization:'Bearer '+native}})).status,403);
+    store.rotateAgentCredentials(operator,link.localId);
+    assert.equal((await read()).status,403);
+    link.credentialGeneration=2; // An explicit reviewed configuration update.
+    assert.equal((await read()).status,200);
+    store.updateAgent(operator,link.localId,{active:false});
+    link.credentialGeneration=store.credentialGeneration(link.localId);
+    assert.equal((await read()).status,403);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
   }
 });
