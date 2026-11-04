@@ -158,6 +158,7 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
         delete: operation("Delete memory"),
       },
       "/v1/memories/search": { post: operation("Search memories") },
+      "/v1/memories/conflicts": {post: {...operation("Read-only conflict detection requires memories:read; workspace access is enforced"), security: [{bearerAuth: []}], requestBody: {required: true, content: {"application/json": {schema: {type: "object", required: ["content"], properties: {content: {type: "string", minLength: 1}, workspace_id: {type: "string"}, scope: {enum: ["private", "shared"]}, type: {enum: ["episodic", "semantic", "procedural"]}, limit: {type: "number"}}}}}}}},
       "/v1/context": { post: operation("Build context pack") },
       "/v1/queue/jobs": {
         get: operation("List queue jobs"),

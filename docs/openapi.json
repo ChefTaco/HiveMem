@@ -982,6 +982,59 @@
         "summary": "Update memory"
       }
     },
+    "/v1/memories/conflicts": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "content": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "number"
+                  },
+                  "scope": {
+                    "enum": [
+                      "private",
+                      "shared"
+                    ]
+                  },
+                  "type": {
+                    "enum": [
+                      "episodic",
+                      "semantic",
+                      "procedural"
+                    ]
+                  },
+                  "workspace_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "content"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read-only conflict detection requires memories:read; workspace access is enforced"
+      }
+    },
     "/v1/memories/search": {
       "post": {
         "responses": {

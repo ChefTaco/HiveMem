@@ -1,5 +1,7 @@
 # Changelog
 
+- Authorize read-only conflict detection with memory read permission, preserving
+  workspace access checks and avoiding false mutation audit receipts.
 - Reserve archived workspace IDs, require ownership for restoration or owner grants,
   and preserve token workspace restrictions for administrator listings. Add an owned
   browser profile/workspace API contract without changing native authentication.

@@ -183,7 +183,7 @@ function requireScope(principal: AuthPrincipal, required: string): void {
 
 function requiredScope(method: string, pathname: string): string | null {
   if (pathname.startsWith("/v1/auth/")) return null;
-  if (method === 'POST' && ['/v1/memories/search','/v1/memories/search/text','/v1/memories/search/hybrid'].includes(pathname)) return 'memories:read';
+  if (method === 'POST' && ['/v1/memories/search','/v1/memories/search/text','/v1/memories/search/hybrid','/v1/memories/conflicts'].includes(pathname)) return 'memories:read';
   if (pathname.startsWith("/v1/admin/") || pathname === "/v1/backup" || pathname === "/v1/restore") return "admin:all";
   if (pathname.startsWith("/v1/queue/")) return method === "GET" ? "queue:read" : "admin:queue";
   if (pathname.startsWith("/v1/agents")) {
@@ -727,7 +727,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       await store.flushPersistence();
       const neededScope = requiredScope(method, url.pathname);
       if (neededScope) requireScope(principal, neededScope);
-      if (!["GET", "HEAD"].includes(method) && !/search|context|chat|browse|embed/.test(url.pathname)) responseAudits.set(response, { principal, path: url.pathname, method, requestId: String(request.headers["x-hive-request-id"] ?? "").slice(0, 128) });
+      if (!["GET", "HEAD"].includes(method) && url.pathname !== "/v1/memories/conflicts" && !/search|context|chat|browse|embed/.test(url.pathname)) responseAudits.set(response, { principal, path: url.pathname, method, requestId: String(request.headers["x-hive-request-id"] ?? "").slice(0, 128) });
 
       if (method === "GET" && url.pathname === "/v1/capabilities") { await sendJson(response, 200, store.capabilities()); return; }
       if (method === 'GET' && url.pathname === '/v1/capabilities/operations') { await sendJson(response, 200, { operations: memoryOperations }); return; }

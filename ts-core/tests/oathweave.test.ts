@@ -113,6 +113,9 @@ test("HTTP keeps identity reads scoped and prevents role-based write escalation"
       403,
     );
     assert.equal((await fetch(origin + "/v1/memories")).status, 401);
+    const before = structuredClone(store.snapshot());
+    assert.equal((await fetch(origin + "/v1/memories/conflicts", {method: "POST", headers, body: JSON.stringify({content: "synthetic conflict query"})})).status, 200);
+    assert.deepEqual(store.snapshot(), before, "Conflict detection is a read and must not create mutation receipts");
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>
