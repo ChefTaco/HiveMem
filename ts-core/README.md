@@ -3,7 +3,7 @@
 HiveMem is a self-hosted shared memory server for AI agents. Agents store and recall episodic,
 semantic, and procedural memories over a REST API, with workspace and per-agent isolation, HS256
 JWT auth, lexical and optional semantic search, citation-backed chat and context packages, a
-reasoning queue, webhooks, and an operator dashboard at `/dashboard`. Data lives in
+reasoning queue and webhooks. HiveXUI is its browser console. Data lives in
 [Qdrant](https://qdrant.tech).
 
 This package is the server. Clients use the REST API directly or the

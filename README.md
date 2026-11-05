@@ -34,8 +34,8 @@ The production runtime is the strict TypeScript core in [`ts-core/`](ts-core), b
 - **Async reasoning queue.** Memory writes enqueue summary, peer-card, representation, conflict-scan, consolidation, dream, sleep, and forgetting-review jobs to a Qdrant-backed queue with token-threshold batching, cooldown awareness, worker heartbeats, stale-lock recovery, and retention/archive summaries.
 - **Operational telemetry and governance.** Consolidation cron runs and cursors persist separately from queue jobs; `/metrics` exposes request, embedding, Qdrant, queue, consolidation, and webhook metrics; authenticated health reports versions and subsystem readiness; admin audit APIs query memory write history, and workspace export/import supports staging hydration without webhook secrets.
 - **Webhooks.** REST-managed endpoints with timestamped HMAC signatures and delivery nonces cover `memory.created`, `session.created`, `summary.updated`, `peer_card.updated`, `conflict.detected`, `queue.empty`, and `webhook.test`.
-- **Operator and agent surfaces.** The self-contained `/dashboard`, Python/TypeScript SDKs, REST helper scripts, and Hermes Agent memory-provider plugin all share the same REST API.
-- **Compatibility tests.** The TypeScript core uses deterministic node:test coverage for REST compatibility, Qdrant hydration, reasoning, dashboard routes, and the Hermes plugin contract.
+- **Operator and agent surfaces.** Python/TypeScript SDKs, REST helper scripts, the Hermes Agent memory-provider plugin, and the memory pages of the [HiveXUI](https://github.com/ChefTaco/HiveXUI) console all use the REST API.
+- **Compatibility tests.** The TypeScript core uses deterministic node:test coverage for REST compatibility, Qdrant hydration, reasoning, dashboard compatibility routes, and the Hermes plugin contract.
 
 ## Install from npm
 
@@ -131,7 +131,7 @@ Integration tests use a deterministic in-process embedder when the configured GG
 
 For remote integration testing against a separate host, do not expose Qdrant directly. Run the tests on the HiveMem host, use an SSH tunnel or VPN/firewall rule that restricts Qdrant access to trusted clients, or point tests at the HiveMem API where applicable.
 
-## SDKs, Dashboard, and Integrations
+## SDKs, Console, and Integrations
 
 HiveMem ships several first-party integration surfaces, all backed by the same REST API:
 
@@ -151,7 +151,7 @@ curl "$HIVEMEM_API_URL/v1/memories/search" \
   -d '{"query":"what do we know about qdrant backups?","workspace_id":"default","limit":5}'
 ```
 
-The dashboard at `/dashboard` is organized as a desktop admin workbench: top-line health and memory metrics, a balanced overview band with Memory Timeline over Task History on the left and Relationship Graph spanning the right half, an editable recent-memory stream, collection and agent activity sidebars, and grouped operations for consolidation analysis, prompt-context preview, conflict review, webhooks, and review workflows. Cleanup and critic operations remain available through REST API operator paths. Unit contract tests validate the rendered template and inline JavaScript.
+HiveMem has no dashboard of its own. In the Hive:Magnus suite, [HiveXUI](https://github.com/ChefTaco/HiveXUI) is the browser console for memories, workspaces and operations such as sessions, webhooks, the graph, conflicts, consolidation and the queue. It is deployed by the [Hive installer](https://github.com/ChefTaco/hive). HiveMem keeps its own API and still runs on its own, through that API. `GET /dashboard` now returns only a placeholder page; the `/dashboard/login` and `/dashboard/api/*` compatibility routes remain for existing callers.
 
 ## Register an Agent
 
