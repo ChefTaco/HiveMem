@@ -1,6 +1,7 @@
 // Public API baseline extracted from Hive; complete schema coverage remains pending.
 import { z } from "zod";
 import { actorCredentialSchema } from "./actor-credentials.js";
+import { memoryBrowserSchemas } from "./browser-memory-contracts.js";
 
 // Owned browser contracts. Native clients retain their existing compatibility APIs.
 const jsonObject = z.record(z.string(), z.unknown());
@@ -185,6 +186,7 @@ export const ConsolidationRequestSchema = z.object({
   priority: z.number().optional(),
 });
 const browserSchemas = {
+  ...memoryBrowserSchemas,
   ActorCredentialRequest: actorCredentialSchema,
   ActorCredentialResult: z.object({
     ok: z.boolean(),
@@ -351,23 +353,31 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
       "/v1/health": { get: operation("Health") },
       "/v1/health/live": { get: operation("Liveness") },
       "/v1/health/ready": { get: operation("Readiness") },
+      "/v1/stats": { get: browserOperation("Read memory statistics", "MemoryStats") },
       "/v1/auth/login": { post: operation("Token compatibility login") },
       "/v1/memories": {
-        post: operation("Create memory"),
+        post: browserOperation("Create memory", "MemoryRecord", "MemoryWrite", "201"),
       },
       "/v1/memories/browse": {
-        get: operation("Browse readable memories with native query filters"),
+        get: { ...browserOperation("Browse readable memories with native query filters", "MemoryBrowseResponse"), parameters: [
+          { name: "offset", in: "query", schema: { type: "integer", minimum: 0 } },
+          { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500 } },
+          { name: "workspace_id", in: "query", schema: { type: "string" } },
+          { name: "scope", in: "query", schema: { enum: ["private", "shared"] } },
+        ] },
       },
       "/v1/memories/{id}": {
-        get: operation("Get memory"),
-        put: operation("Update memory"),
-        delete: operation("Delete memory"),
+        get: browserOperation("Get memory", "MemoryRecord"),
+        put: browserOperation("Update memory", "MemoryRecord", "MemoryUpdate"),
+        delete: { summary: "Delete memory", security: [{ bearerAuth: [] }], responses: { "204": { description: "Deleted" } } },
       },
-      "/v1/memories/search": { post: operation("Search memories") },
+      "/v1/memories/search": { post: browserOperation("Search memories", "MemorySearchResponse", "MemorySearchRequest") },
+      "/v1/memories/{id}/graph": { get: browserOperation("Read permitted memory graph", "Graph") },
       "/v1/memories/conflicts": {
         post: {
-          ...operation(
+          ...browserOperation(
             "Read-only conflict detection requires memories:read; workspace access is enforced",
+            "MemorySearchResponse", "MemoryConflictQuery",
           ),
           security: [{ bearerAuth: [] }],
           requestBody: {
@@ -412,13 +422,13 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
         },
       },
       "/v1/sessions/{sessionId}/memories": {
-        get: operation("List readable session memories"),
+        get: browserArrayOperation("List readable session memories", "MemoryRecord"),
       },
       "/v1/sessions/{sessionId}/context": {
-        post: operation("Build context for a readable session"),
+        post: browserOperation("Build context for a readable session", "SessionContextResult", "SessionContextRequest"),
       },
       "/v1/sessions/{sessionId}/chat": {
-        post: operation("Source-cited session chat; optional SSE"),
+        post: browserOperation("Source-cited session chat; native clients may additionally request SSE", "SessionChatResult", "SessionChatRequest"),
       },
       "/v1/webhooks": {
         get: browserArrayOperation(
@@ -510,33 +520,33 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
       "/v1/queue/status": {
         get: browserOperation(
           "Read permitted queue status and jobs",
-          "MemoryOperation",
+          "MemoryQueueStatus",
         ),
       },
       "/v1/queue/jobs/{id}": {
-        get: browserOperation("Read permitted job detail", "MemoryOperation"),
+        get: browserOperation("Read permitted job detail", "MemoryQueueJob"),
         delete: browserOperation(
           "Cancel work before execution",
-          "MemoryOperation",
+          "MemoryQueueJob",
         ),
       },
       "/v1/queue/jobs/{id}/retry": {
         post: browserOperation(
           "Retry failed work after inspection",
-          "MemoryOperation",
+          "MemoryQueueJob",
         ),
       },
       "/v1/queue/run-next": {
-        post: browserOperation("Run next pending job", "MemoryOperation"),
+        post: browserOperation("Run next pending job", "MemoryQueueJob"),
       },
       "/v1/context": { post: operation("Build context pack") },
       "/v1/queue/jobs": {
         get: operation("List queue jobs"),
         post: operation("Create queue job"),
       },
-      "/v1/queue/jobs/{id}/run": { post: operation("Run queue job") },
+      "/v1/queue/jobs/{id}/run": { post: browserOperation("Run queue job", "MemoryQueueJob") },
       "/v1/queue/operations/{id}": {
-        get: operation("Get queue operation receipt"),
+        get: browserOperation("Get queue operation receipt", "MemoryQueueJob"),
       },
       "/v1/peers/{peerId}/conclusions": {
         get: operation("List peer conclusions (supports paginate and cursor)"),
@@ -546,7 +556,7 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
         delete: operation("Delete conclusion"),
       },
       "/v1/agents": {
-        get: operation("List agents"),
+        get: browserArrayOperation("List agents", "MemoryAgent"),
         post: operation("Register agent"),
       },
       "/v1/workspaces": {
@@ -681,8 +691,9 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
             schema: { type: "string" },
           },
         ],
-        get: operation(
+        get: browserOperation(
           "Resolve workspace policy and optional agent/session overrides",
+          "WorkspaceSettings",
         ),
       },
       "/v1/workspaces/{workspaceId}/schedule-dream": {
@@ -694,7 +705,7 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
             schema: { type: "string" },
           },
         ],
-        post: operation("Schedule workspace consolidation"),
+        post: browserOperation("Schedule workspace consolidation", "DreamSchedule", undefined, "202"),
       },
       "/dashboard-data": { get: operation("Dashboard data") },
       "/dashboard/memories": { get: operation("Dashboard memory list") },

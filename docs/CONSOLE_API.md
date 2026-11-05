@@ -4,6 +4,15 @@ HiveXUI uses the same bearer-authorized product API as native clients. Browser
 contracts are owned by HiveMem and exported in `docs/openapi.json`; no dashboard
 cookie or administrator credential proxy is required.
 
+`npm run export:browser-contract -- --revision FULL_REVIEWED_REVISION --output
+NEW_DIRECTORY` exports the committed OpenAPI bytes, SHA-256/revision provenance,
+license and notice. It never reads a sibling checkout or includes runtime state.
+Consumers pin that artifact and regenerate their browser validators with drift
+checks. The contract includes memory CRUD/search, statistics, agent summaries,
+worker/queue state and non-streamed session context/chat. Native SSE remains
+available to independent clients. Browse pagination uses `offset` and `limit`;
+`next_cursor` is a returned offset hint, not a separate accepted query parameter.
+
 | Workflow | Direct routes | Permission |
 | --- | --- | --- |
 | Session lifecycle and current memory history | `/v1/sessions`, `/v1/sessions/{id}`, `/v1/sessions/{id}/memories` | `sessions:read` or `sessions:write` |

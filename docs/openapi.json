@@ -144,6 +144,55 @@
         ],
         "type": "object"
       },
+      "DreamSchedule": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "observer_peer_id": {
+            "type": "string"
+          },
+          "peer_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "in_progress",
+              "completed",
+              "failed",
+              "dead_letter",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "task_type": {
+            "const": "dream",
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "task_type",
+          "workspace_id",
+          "peer_id",
+          "observer_peer_id",
+          "session_id",
+          "status"
+        ],
+        "type": "object"
+      },
       "Graph": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -372,6 +421,663 @@
         ],
         "type": "object"
       },
+      "MemoryAgent": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "memory_counts": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "display_name",
+          "description",
+          "created_at",
+          "memory_counts"
+        ],
+        "type": "object"
+      },
+      "MemoryBrowseResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "type": "number"
+          },
+          "memories": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agent_id": {
+                  "type": "string"
+                },
+                "confidence": {
+                  "type": "number"
+                },
+                "confidence_provenance": {
+                  "items": {
+                    "additionalProperties": {},
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "content": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "corroborated_by": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "created_at": {
+                  "type": "string"
+                },
+                "deleted_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "effective_confidence": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "endorsed_by": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "endorsements": {
+                  "type": "number"
+                },
+                "expires_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "importance": {
+                  "type": "number"
+                },
+                "metadata": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "observed_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "opposed_by": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "redaction_policy": {
+                  "enum": [
+                    "none",
+                    "redact",
+                    "exclude"
+                  ],
+                  "type": "string"
+                },
+                "relationships": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "confidence": {
+                        "type": "number"
+                      },
+                      "metadata": {
+                        "additionalProperties": {},
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "target_id": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "enum": [
+                          "supports",
+                          "contradicts",
+                          "updates",
+                          "duplicates",
+                          "causes",
+                          "part_of",
+                          "derived_from",
+                          "about_entity"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "target_id",
+                      "type",
+                      "confidence",
+                      "metadata"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "retention_class": {
+                  "type": "string"
+                },
+                "sanitization_warnings": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scope": {
+                  "enum": [
+                    "private",
+                    "shared"
+                  ],
+                  "type": "string"
+                },
+                "sensitivity": {
+                  "enum": [
+                    "public",
+                    "internal",
+                    "sensitive",
+                    "restricted"
+                  ],
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "source": {
+                  "enum": [
+                    "conversation",
+                    "research",
+                    "observation",
+                    "consolidation",
+                    "user_feedback",
+                    "skill",
+                    "system"
+                  ],
+                  "type": "string"
+                },
+                "superseded_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "superseded_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "supersedes": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tags": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "enum": [
+                    "episodic",
+                    "semantic",
+                    "procedural"
+                  ],
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "string"
+                },
+                "valid_from": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "valid_to": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "workspace_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "content",
+                "confidence",
+                "importance",
+                "tags",
+                "metadata",
+                "sensitivity",
+                "retention_class",
+                "redaction_policy",
+                "workspace_id",
+                "session_id",
+                "expires_at",
+                "valid_from",
+                "valid_to",
+                "observed_at",
+                "relationships",
+                "type",
+                "scope",
+                "source",
+                "supersedes",
+                "id",
+                "agent_id",
+                "created_at",
+                "updated_at",
+                "confidence_provenance",
+                "superseded_by",
+                "superseded_at",
+                "corroborated_by",
+                "endorsements",
+                "endorsed_by",
+                "opposed_by",
+                "deleted_at",
+                "effective_confidence",
+                "sanitization_warnings"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "results": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agent_id": {
+                  "type": "string"
+                },
+                "confidence": {
+                  "type": "number"
+                },
+                "confidence_provenance": {
+                  "items": {
+                    "additionalProperties": {},
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "content": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "corroborated_by": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "created_at": {
+                  "type": "string"
+                },
+                "deleted_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "effective_confidence": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "endorsed_by": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "endorsements": {
+                  "type": "number"
+                },
+                "expires_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "importance": {
+                  "type": "number"
+                },
+                "metadata": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "observed_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "opposed_by": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "redaction_policy": {
+                  "enum": [
+                    "none",
+                    "redact",
+                    "exclude"
+                  ],
+                  "type": "string"
+                },
+                "relationships": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "confidence": {
+                        "type": "number"
+                      },
+                      "metadata": {
+                        "additionalProperties": {},
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "target_id": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "enum": [
+                          "supports",
+                          "contradicts",
+                          "updates",
+                          "duplicates",
+                          "causes",
+                          "part_of",
+                          "derived_from",
+                          "about_entity"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "target_id",
+                      "type",
+                      "confidence",
+                      "metadata"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "retention_class": {
+                  "type": "string"
+                },
+                "sanitization_warnings": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scope": {
+                  "enum": [
+                    "private",
+                    "shared"
+                  ],
+                  "type": "string"
+                },
+                "sensitivity": {
+                  "enum": [
+                    "public",
+                    "internal",
+                    "sensitive",
+                    "restricted"
+                  ],
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "source": {
+                  "enum": [
+                    "conversation",
+                    "research",
+                    "observation",
+                    "consolidation",
+                    "user_feedback",
+                    "skill",
+                    "system"
+                  ],
+                  "type": "string"
+                },
+                "superseded_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "superseded_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "supersedes": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tags": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "enum": [
+                    "episodic",
+                    "semantic",
+                    "procedural"
+                  ],
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "string"
+                },
+                "valid_from": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "valid_to": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "workspace_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "content",
+                "confidence",
+                "importance",
+                "tags",
+                "metadata",
+                "sensitivity",
+                "retention_class",
+                "redaction_policy",
+                "workspace_id",
+                "session_id",
+                "expires_at",
+                "valid_from",
+                "valid_to",
+                "observed_at",
+                "relationships",
+                "type",
+                "scope",
+                "source",
+                "supersedes",
+                "id",
+                "agent_id",
+                "created_at",
+                "updated_at",
+                "confidence_provenance",
+                "superseded_by",
+                "superseded_at",
+                "corroborated_by",
+                "endorsements",
+                "endorsed_by",
+                "opposed_by",
+                "deleted_at",
+                "effective_confidence",
+                "sanitization_warnings"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "memories",
+          "results",
+          "total",
+          "offset",
+          "limit",
+          "next_cursor"
+        ],
+        "type": "object"
+      },
+      "MemoryConflictQuery": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "scope": {
+            "enum": [
+              "private",
+              "shared"
+            ],
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "episodic",
+              "semantic",
+              "procedural"
+            ],
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "type": "object"
+      },
       "MemoryOperation": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": {},
@@ -423,6 +1129,2126 @@
           "role",
           "scopes",
           "workspace_ids"
+        ],
+        "type": "object"
+      },
+      "MemoryQueueJob": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "locked_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "not_before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observed_peer_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observer_peer_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_agent_id": {
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "peer_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priority": {
+            "type": "number"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retry_count": {
+            "type": "number"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "in_progress",
+              "completed",
+              "failed",
+              "dead_letter",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "task_type": {
+            "enum": [
+              "representation",
+              "summary",
+              "consolidation",
+              "dream",
+              "decay_recalc",
+              "conflict_scan",
+              "peer_card",
+              "embedding_reconcile",
+              "webhook_delivery",
+              "message_extract",
+              "sleep",
+              "forgetting_review"
+            ],
+            "type": "string"
+          },
+          "work_unit_key": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "task_type",
+          "status",
+          "work_unit_key",
+          "owner_agent_id",
+          "workspace_id",
+          "session_id",
+          "peer_id",
+          "priority",
+          "retry_count",
+          "created_at",
+          "not_before",
+          "started_at",
+          "finished_at",
+          "error",
+          "payload",
+          "observer_peer_id",
+          "observed_peer_id",
+          "idempotency_key",
+          "locked_at",
+          "result"
+        ],
+        "type": "object"
+      },
+      "MemoryQueueJobSummary": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "not_before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_agent_id": {
+            "type": "string"
+          },
+          "peer_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priority": {
+            "type": "number"
+          },
+          "retry_count": {
+            "type": "number"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "in_progress",
+              "completed",
+              "failed",
+              "dead_letter",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "task_type": {
+            "enum": [
+              "representation",
+              "summary",
+              "consolidation",
+              "dream",
+              "decay_recalc",
+              "conflict_scan",
+              "peer_card",
+              "embedding_reconcile",
+              "webhook_delivery",
+              "message_extract",
+              "sleep",
+              "forgetting_review"
+            ],
+            "type": "string"
+          },
+          "work_unit_key": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "task_type",
+          "status",
+          "work_unit_key",
+          "owner_agent_id",
+          "workspace_id",
+          "session_id",
+          "peer_id",
+          "priority",
+          "retry_count",
+          "created_at",
+          "not_before",
+          "started_at",
+          "finished_at",
+          "error"
+        ],
+        "type": "object"
+      },
+      "MemoryQueueStatus": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "dead_letter_count": {
+            "type": "number"
+          },
+          "failed_count": {
+            "type": "number"
+          },
+          "in_progress_count": {
+            "type": "number"
+          },
+          "jobs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "created_at": {
+                  "type": "string"
+                },
+                "error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "finished_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "not_before": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "owner_agent_id": {
+                  "type": "string"
+                },
+                "peer_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "priority": {
+                  "type": "number"
+                },
+                "retry_count": {
+                  "type": "number"
+                },
+                "session_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "started_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed",
+                    "failed",
+                    "dead_letter",
+                    "cancelled"
+                  ],
+                  "type": "string"
+                },
+                "task_type": {
+                  "enum": [
+                    "representation",
+                    "summary",
+                    "consolidation",
+                    "dream",
+                    "decay_recalc",
+                    "conflict_scan",
+                    "peer_card",
+                    "embedding_reconcile",
+                    "webhook_delivery",
+                    "message_extract",
+                    "sleep",
+                    "forgetting_review"
+                  ],
+                  "type": "string"
+                },
+                "work_unit_key": {
+                  "type": "string"
+                },
+                "workspace_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "task_type",
+                "status",
+                "work_unit_key",
+                "owner_agent_id",
+                "workspace_id",
+                "session_id",
+                "peer_id",
+                "priority",
+                "retry_count",
+                "created_at",
+                "not_before",
+                "started_at",
+                "finished_at",
+                "error"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "pending_count": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          },
+          "worker": {
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "heartbeat": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_success": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "oldest_pending_seconds": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "pending_jobs": {
+                "type": "number"
+              },
+              "ready": {
+                "type": "boolean"
+              },
+              "recovered_on_startup": {
+                "type": "number"
+              },
+              "running": {
+                "type": "boolean"
+              },
+              "state": {
+                "enum": [
+                  "manual",
+                  "disabled",
+                  "stale",
+                  "degraded",
+                  "running",
+                  "idle",
+                  "starting"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "ready",
+              "state",
+              "managed",
+              "enabled",
+              "running",
+              "heartbeat",
+              "last_success",
+              "error",
+              "recovered_on_startup",
+              "pending_jobs",
+              "oldest_pending_seconds"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "worker",
+          "jobs",
+          "total",
+          "pending_count",
+          "in_progress_count",
+          "failed_count",
+          "dead_letter_count",
+          "offset",
+          "limit"
+        ],
+        "type": "object"
+      },
+      "MemoryRecord": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "confidence_provenance": {
+            "items": {
+              "additionalProperties": {},
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "content": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "corroborated_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effective_confidence": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "endorsed_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "endorsements": {
+            "type": "number"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "importance": {
+            "type": "number"
+          },
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "observed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "opposed_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "redaction_policy": {
+            "enum": [
+              "none",
+              "redact",
+              "exclude"
+            ],
+            "type": "string"
+          },
+          "relationships": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "confidence": {
+                  "type": "number"
+                },
+                "metadata": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "target_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "supports",
+                    "contradicts",
+                    "updates",
+                    "duplicates",
+                    "causes",
+                    "part_of",
+                    "derived_from",
+                    "about_entity"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target_id",
+                "type",
+                "confidence",
+                "metadata"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "retention_class": {
+            "type": "string"
+          },
+          "sanitization_warnings": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "enum": [
+              "private",
+              "shared"
+            ],
+            "type": "string"
+          },
+          "sensitivity": {
+            "enum": [
+              "public",
+              "internal",
+              "sensitive",
+              "restricted"
+            ],
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "enum": [
+              "conversation",
+              "research",
+              "observation",
+              "consolidation",
+              "user_feedback",
+              "skill",
+              "system"
+            ],
+            "type": "string"
+          },
+          "superseded_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "superseded_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supersedes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "episodic",
+              "semantic",
+              "procedural"
+            ],
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "valid_from": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "confidence",
+          "importance",
+          "tags",
+          "metadata",
+          "sensitivity",
+          "retention_class",
+          "redaction_policy",
+          "workspace_id",
+          "session_id",
+          "expires_at",
+          "valid_from",
+          "valid_to",
+          "observed_at",
+          "relationships",
+          "type",
+          "scope",
+          "source",
+          "supersedes",
+          "id",
+          "agent_id",
+          "created_at",
+          "updated_at",
+          "confidence_provenance",
+          "superseded_by",
+          "superseded_at",
+          "corroborated_by",
+          "endorsements",
+          "endorsed_by",
+          "opposed_by",
+          "deleted_at",
+          "effective_confidence",
+          "sanitization_warnings"
+        ],
+        "type": "object"
+      },
+      "MemorySearchRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "agent_filter": {
+            "type": "string"
+          },
+          "as_of": {
+            "type": "string"
+          },
+          "diversity": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "filters": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "from_self": {
+            "type": "boolean"
+          },
+          "graph": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "include_deleted": {
+            "type": "boolean"
+          },
+          "include_sensitive": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "min_confidence": {
+            "type": "number"
+          },
+          "min_importance": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "query": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "private",
+              "shared"
+            ],
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "episodic",
+              "semantic",
+              "procedural"
+            ],
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MemorySearchResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "collections_searched": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "results": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "citation": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "expires_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "freshness": {
+                      "enum": [
+                        "current",
+                        "live_recheck",
+                        "historical"
+                      ],
+                      "type": "string"
+                    },
+                    "memory_id": {
+                      "type": "string"
+                    },
+                    "observed_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publisher": {
+                      "type": "string"
+                    },
+                    "relationship_path": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "revision": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "source_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "valid_from": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "valid_to": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "memory_id",
+                    "publisher",
+                    "source_ref",
+                    "revision",
+                    "observed_at",
+                    "valid_from",
+                    "valid_to",
+                    "expires_at",
+                    "freshness",
+                    "relationship_path"
+                  ],
+                  "type": "object"
+                },
+                "collection": {
+                  "type": "string"
+                },
+                "explanation": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "final_score": {
+                          "type": "number"
+                        },
+                        "importance_boost": {
+                          "type": "number"
+                        },
+                        "text_match": {
+                          "type": "boolean"
+                        },
+                        "vector_score": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "vector_score",
+                        "importance_boost",
+                        "text_match",
+                        "final_score"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "is_own": {
+                  "type": "boolean"
+                },
+                "memory": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agent_id": {
+                      "type": "string"
+                    },
+                    "confidence": {
+                      "type": "number"
+                    },
+                    "confidence_provenance": {
+                      "items": {
+                        "additionalProperties": {},
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "content": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "corroborated_by": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "deleted_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "effective_confidence": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "endorsed_by": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "endorsements": {
+                      "type": "number"
+                    },
+                    "expires_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "importance": {
+                      "type": "number"
+                    },
+                    "metadata": {
+                      "additionalProperties": {},
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "observed_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "opposed_by": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "redaction_policy": {
+                      "enum": [
+                        "none",
+                        "redact",
+                        "exclude"
+                      ],
+                      "type": "string"
+                    },
+                    "relationships": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "confidence": {
+                            "type": "number"
+                          },
+                          "metadata": {
+                            "additionalProperties": {},
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "type": "object"
+                          },
+                          "target_id": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "enum": [
+                              "supports",
+                              "contradicts",
+                              "updates",
+                              "duplicates",
+                              "causes",
+                              "part_of",
+                              "derived_from",
+                              "about_entity"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "target_id",
+                          "type",
+                          "confidence",
+                          "metadata"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "retention_class": {
+                      "type": "string"
+                    },
+                    "sanitization_warnings": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "enum": [
+                        "private",
+                        "shared"
+                      ],
+                      "type": "string"
+                    },
+                    "sensitivity": {
+                      "enum": [
+                        "public",
+                        "internal",
+                        "sensitive",
+                        "restricted"
+                      ],
+                      "type": "string"
+                    },
+                    "session_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "source": {
+                      "enum": [
+                        "conversation",
+                        "research",
+                        "observation",
+                        "consolidation",
+                        "user_feedback",
+                        "skill",
+                        "system"
+                      ],
+                      "type": "string"
+                    },
+                    "superseded_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "superseded_by": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "supersedes": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tags": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "type": {
+                      "enum": [
+                        "episodic",
+                        "semantic",
+                        "procedural"
+                      ],
+                      "type": "string"
+                    },
+                    "updated_at": {
+                      "type": "string"
+                    },
+                    "valid_from": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "valid_to": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "workspace_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "content",
+                    "confidence",
+                    "importance",
+                    "tags",
+                    "metadata",
+                    "sensitivity",
+                    "retention_class",
+                    "redaction_policy",
+                    "workspace_id",
+                    "session_id",
+                    "expires_at",
+                    "valid_from",
+                    "valid_to",
+                    "observed_at",
+                    "relationships",
+                    "type",
+                    "scope",
+                    "source",
+                    "supersedes",
+                    "id",
+                    "agent_id",
+                    "created_at",
+                    "updated_at",
+                    "confidence_provenance",
+                    "superseded_by",
+                    "superseded_at",
+                    "corroborated_by",
+                    "endorsements",
+                    "endorsed_by",
+                    "opposed_by",
+                    "deleted_at",
+                    "effective_confidence",
+                    "sanitization_warnings"
+                  ],
+                  "type": "object"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "score_components": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "confidence_rank": {
+                      "type": "number"
+                    },
+                    "freshness_rank": {
+                      "type": "number"
+                    },
+                    "graph_rank": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "importance_rank": {
+                      "type": "number"
+                    },
+                    "lexical_rank": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "mmr_score": {
+                      "type": "number"
+                    },
+                    "rrf_score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "lexical_rank",
+                    "graph_rank",
+                    "confidence_rank",
+                    "importance_rank",
+                    "freshness_rank",
+                    "rrf_score",
+                    "mmr_score"
+                  ],
+                  "type": "object"
+                },
+                "selection_reason": {
+                  "enum": [
+                    "query",
+                    "relationship",
+                    "entity"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "memory",
+                "score",
+                "collection",
+                "is_own"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "total_searched": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "results",
+          "total_searched",
+          "collections_searched"
+        ],
+        "type": "object"
+      },
+      "MemorySearchResult": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "citation": {
+            "additionalProperties": false,
+            "properties": {
+              "expires_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "freshness": {
+                "enum": [
+                  "current",
+                  "live_recheck",
+                  "historical"
+                ],
+                "type": "string"
+              },
+              "memory_id": {
+                "type": "string"
+              },
+              "observed_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "publisher": {
+                "type": "string"
+              },
+              "relationship_path": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "revision": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "valid_from": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "valid_to": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "memory_id",
+              "publisher",
+              "source_ref",
+              "revision",
+              "observed_at",
+              "valid_from",
+              "valid_to",
+              "expires_at",
+              "freshness",
+              "relationship_path"
+            ],
+            "type": "object"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "final_score": {
+                    "type": "number"
+                  },
+                  "importance_boost": {
+                    "type": "number"
+                  },
+                  "text_match": {
+                    "type": "boolean"
+                  },
+                  "vector_score": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "vector_score",
+                  "importance_boost",
+                  "text_match",
+                  "final_score"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_own": {
+            "type": "boolean"
+          },
+          "memory": {
+            "additionalProperties": false,
+            "properties": {
+              "agent_id": {
+                "type": "string"
+              },
+              "confidence": {
+                "type": "number"
+              },
+              "confidence_provenance": {
+                "items": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "content": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "corroborated_by": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "deleted_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "effective_confidence": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "endorsed_by": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "endorsements": {
+                "type": "number"
+              },
+              "expires_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "importance": {
+                "type": "number"
+              },
+              "metadata": {
+                "additionalProperties": {},
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "observed_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "opposed_by": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "redaction_policy": {
+                "enum": [
+                  "none",
+                  "redact",
+                  "exclude"
+                ],
+                "type": "string"
+              },
+              "relationships": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "confidence": {
+                      "type": "number"
+                    },
+                    "metadata": {
+                      "additionalProperties": {},
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "target_id": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "enum": [
+                        "supports",
+                        "contradicts",
+                        "updates",
+                        "duplicates",
+                        "causes",
+                        "part_of",
+                        "derived_from",
+                        "about_entity"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "target_id",
+                    "type",
+                    "confidence",
+                    "metadata"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "retention_class": {
+                "type": "string"
+              },
+              "sanitization_warnings": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "scope": {
+                "enum": [
+                  "private",
+                  "shared"
+                ],
+                "type": "string"
+              },
+              "sensitivity": {
+                "enum": [
+                  "public",
+                  "internal",
+                  "sensitive",
+                  "restricted"
+                ],
+                "type": "string"
+              },
+              "session_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "enum": [
+                  "conversation",
+                  "research",
+                  "observation",
+                  "consolidation",
+                  "user_feedback",
+                  "skill",
+                  "system"
+                ],
+                "type": "string"
+              },
+              "superseded_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "superseded_by": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "supersedes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "tags": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": {
+                "enum": [
+                  "episodic",
+                  "semantic",
+                  "procedural"
+                ],
+                "type": "string"
+              },
+              "updated_at": {
+                "type": "string"
+              },
+              "valid_from": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "valid_to": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "workspace_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content",
+              "confidence",
+              "importance",
+              "tags",
+              "metadata",
+              "sensitivity",
+              "retention_class",
+              "redaction_policy",
+              "workspace_id",
+              "session_id",
+              "expires_at",
+              "valid_from",
+              "valid_to",
+              "observed_at",
+              "relationships",
+              "type",
+              "scope",
+              "source",
+              "supersedes",
+              "id",
+              "agent_id",
+              "created_at",
+              "updated_at",
+              "confidence_provenance",
+              "superseded_by",
+              "superseded_at",
+              "corroborated_by",
+              "endorsements",
+              "endorsed_by",
+              "opposed_by",
+              "deleted_at",
+              "effective_confidence",
+              "sanitization_warnings"
+            ],
+            "type": "object"
+          },
+          "score": {
+            "type": "number"
+          },
+          "score_components": {
+            "additionalProperties": false,
+            "properties": {
+              "confidence_rank": {
+                "type": "number"
+              },
+              "freshness_rank": {
+                "type": "number"
+              },
+              "graph_rank": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "importance_rank": {
+                "type": "number"
+              },
+              "lexical_rank": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "mmr_score": {
+                "type": "number"
+              },
+              "rrf_score": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lexical_rank",
+              "graph_rank",
+              "confidence_rank",
+              "importance_rank",
+              "freshness_rank",
+              "rrf_score",
+              "mmr_score"
+            ],
+            "type": "object"
+          },
+          "selection_reason": {
+            "enum": [
+              "query",
+              "relationship",
+              "entity"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory",
+          "score",
+          "collection",
+          "is_own"
+        ],
+        "type": "object"
+      },
+      "MemorySource": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "enum": [
+          "conversation",
+          "research",
+          "observation",
+          "consolidation",
+          "user_feedback",
+          "skill",
+          "system"
+        ],
+        "type": "string"
+      },
+      "MemoryStats": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "agents": {
+            "type": "number"
+          },
+          "conclusions": {
+            "type": "number"
+          },
+          "episodes": {
+            "type": "number"
+          },
+          "memories": {
+            "type": "number"
+          },
+          "messages": {
+            "type": "number"
+          },
+          "queue_jobs": {
+            "type": "number"
+          },
+          "sessions": {
+            "type": "number"
+          },
+          "webhook_deliveries": {
+            "type": "number"
+          },
+          "webhooks": {
+            "type": "number"
+          },
+          "workspaces": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "agents",
+          "memories",
+          "sessions",
+          "workspaces",
+          "queue_jobs",
+          "webhooks",
+          "webhook_deliveries",
+          "conclusions",
+          "episodes",
+          "messages"
+        ],
+        "type": "object"
+      },
+      "MemoryUpdate": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "type": "number"
+          },
+          "content": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "importance": {
+            "type": "number"
+          },
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "observed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "redaction_policy": {
+            "enum": [
+              "none",
+              "redact",
+              "exclude"
+            ],
+            "type": "string"
+          },
+          "relationships": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "confidence": {
+                  "type": "number"
+                },
+                "metadata": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "target_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "supports",
+                    "contradicts",
+                    "updates",
+                    "duplicates",
+                    "causes",
+                    "part_of",
+                    "derived_from",
+                    "about_entity"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target_id",
+                "type",
+                "confidence",
+                "metadata"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "retention_class": {
+            "type": "string"
+          },
+          "sensitivity": {
+            "enum": [
+              "public",
+              "internal",
+              "sensitive",
+              "restricted"
+            ],
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "valid_from": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MemoryWrite": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "type": "number"
+          },
+          "confidence_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "importance": {
+            "type": "number"
+          },
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "observed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "redaction_policy": {
+            "enum": [
+              "none",
+              "redact",
+              "exclude"
+            ],
+            "type": "string"
+          },
+          "relationships": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "confidence": {
+                  "type": "number"
+                },
+                "metadata": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "target_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "supports",
+                    "contradicts",
+                    "updates",
+                    "duplicates",
+                    "causes",
+                    "part_of",
+                    "derived_from",
+                    "about_entity"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target_id",
+                "type",
+                "confidence",
+                "metadata"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "retention_class": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "private",
+              "shared"
+            ],
+            "type": "string"
+          },
+          "sensitivity": {
+            "enum": [
+              "public",
+              "internal",
+              "sensitive",
+              "restricted"
+            ],
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "enum": [
+              "conversation",
+              "research",
+              "observation",
+              "consolidation",
+              "user_feedback",
+              "skill",
+              "system"
+            ],
+            "type": "string"
+          },
+          "supersedes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "episodic",
+              "semantic",
+              "procedural"
+            ],
+            "type": "string"
+          },
+          "valid_from": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "type",
+          "scope"
         ],
         "type": "object"
       },
@@ -482,6 +3308,806 @@
           "created_at",
           "updated_at",
           "deleted_at"
+        ],
+        "type": "object"
+      },
+      "SessionChatRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "include_citations": {
+            "type": "boolean"
+          },
+          "max_sources": {
+            "type": "number"
+          },
+          "min_confidence": {
+            "type": "number"
+          },
+          "query": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "reasoning_level": {
+            "enum": [
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "max"
+            ],
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "private",
+              "shared"
+            ],
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "episodic",
+              "semantic",
+              "procedural"
+            ],
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "SessionChatResult": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "processed_at": {
+            "type": "string"
+          },
+          "reasoning_level": {
+            "enum": [
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "max"
+            ],
+            "type": "string"
+          },
+          "requested_at": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sources": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agent_id": {
+                  "type": "string"
+                },
+                "collection": {
+                  "type": "string"
+                },
+                "confidence": {
+                  "type": "number"
+                },
+                "content": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "type": "string"
+                },
+                "effective_confidence": {
+                  "type": "number"
+                },
+                "importance": {
+                  "type": "number"
+                },
+                "is_own": {
+                  "type": "boolean"
+                },
+                "memory_id": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "tags": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "memory_id",
+                "collection",
+                "content",
+                "score",
+                "confidence",
+                "effective_confidence",
+                "importance",
+                "tags",
+                "agent_id",
+                "created_at",
+                "is_own"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "usage": {
+            "additionalProperties": false,
+            "properties": {
+              "answer_tokens": {
+                "type": "number"
+              },
+              "query_tokens": {
+                "type": "number"
+              },
+              "source_tokens": {
+                "type": "number"
+              },
+              "total_tokens": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "query_tokens",
+              "answer_tokens",
+              "source_tokens",
+              "total_tokens"
+            ],
+            "type": "object"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer",
+          "reasoning_level",
+          "sources",
+          "usage",
+          "session_id",
+          "workspace_id",
+          "requested_at",
+          "processed_at"
+        ],
+        "type": "object"
+      },
+      "SessionContextRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "agent_filter": {
+            "type": "string"
+          },
+          "as_of": {
+            "type": "string"
+          },
+          "diversity": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "filters": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "from_self": {
+            "type": "boolean"
+          },
+          "graph": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "include_deleted": {
+            "type": "boolean"
+          },
+          "include_sensitive": {
+            "type": "boolean"
+          },
+          "include_session_memories": {
+            "type": "boolean"
+          },
+          "max_memories": {
+            "type": "number"
+          },
+          "min_confidence": {
+            "type": "number"
+          },
+          "min_importance": {
+            "type": "number"
+          },
+          "query": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "private",
+              "shared"
+            ],
+            "type": "string"
+          },
+          "search_query": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "token_budget": {
+            "type": "number"
+          },
+          "type": {
+            "enum": [
+              "episodic",
+              "semantic",
+              "procedural"
+            ],
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SessionContextResult": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "formatted_context": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "format": {
+                "const": "markdown",
+                "type": "string"
+              }
+            },
+            "required": [
+              "format",
+              "content"
+            ],
+            "type": "object"
+          },
+          "memories": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "citation": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "expires_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "freshness": {
+                      "enum": [
+                        "current",
+                        "live_recheck",
+                        "historical"
+                      ],
+                      "type": "string"
+                    },
+                    "memory_id": {
+                      "type": "string"
+                    },
+                    "observed_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "publisher": {
+                      "type": "string"
+                    },
+                    "relationship_path": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "revision": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "source_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "valid_from": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "valid_to": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "memory_id",
+                    "publisher",
+                    "source_ref",
+                    "revision",
+                    "observed_at",
+                    "valid_from",
+                    "valid_to",
+                    "expires_at",
+                    "freshness",
+                    "relationship_path"
+                  ],
+                  "type": "object"
+                },
+                "collection": {
+                  "type": "string"
+                },
+                "memory": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agent_id": {
+                      "type": "string"
+                    },
+                    "confidence": {
+                      "type": "number"
+                    },
+                    "confidence_provenance": {
+                      "items": {
+                        "additionalProperties": {},
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "content": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "corroborated_by": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "created_at": {
+                      "type": "string"
+                    },
+                    "deleted_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "effective_confidence": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "endorsed_by": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "endorsements": {
+                      "type": "number"
+                    },
+                    "expires_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "importance": {
+                      "type": "number"
+                    },
+                    "metadata": {
+                      "additionalProperties": {},
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "observed_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "opposed_by": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "redaction_policy": {
+                      "enum": [
+                        "none",
+                        "redact",
+                        "exclude"
+                      ],
+                      "type": "string"
+                    },
+                    "relationships": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "confidence": {
+                            "type": "number"
+                          },
+                          "metadata": {
+                            "additionalProperties": {},
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "type": "object"
+                          },
+                          "target_id": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "enum": [
+                              "supports",
+                              "contradicts",
+                              "updates",
+                              "duplicates",
+                              "causes",
+                              "part_of",
+                              "derived_from",
+                              "about_entity"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "target_id",
+                          "type",
+                          "confidence",
+                          "metadata"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "retention_class": {
+                      "type": "string"
+                    },
+                    "sanitization_warnings": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "enum": [
+                        "private",
+                        "shared"
+                      ],
+                      "type": "string"
+                    },
+                    "sensitivity": {
+                      "enum": [
+                        "public",
+                        "internal",
+                        "sensitive",
+                        "restricted"
+                      ],
+                      "type": "string"
+                    },
+                    "session_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "source": {
+                      "enum": [
+                        "conversation",
+                        "research",
+                        "observation",
+                        "consolidation",
+                        "user_feedback",
+                        "skill",
+                        "system"
+                      ],
+                      "type": "string"
+                    },
+                    "superseded_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "superseded_by": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "supersedes": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tags": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "type": {
+                      "enum": [
+                        "episodic",
+                        "semantic",
+                        "procedural"
+                      ],
+                      "type": "string"
+                    },
+                    "updated_at": {
+                      "type": "string"
+                    },
+                    "valid_from": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "valid_to": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "workspace_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "content",
+                    "confidence",
+                    "importance",
+                    "tags",
+                    "metadata",
+                    "sensitivity",
+                    "retention_class",
+                    "redaction_policy",
+                    "workspace_id",
+                    "session_id",
+                    "expires_at",
+                    "valid_from",
+                    "valid_to",
+                    "observed_at",
+                    "relationships",
+                    "type",
+                    "scope",
+                    "source",
+                    "supersedes",
+                    "id",
+                    "agent_id",
+                    "created_at",
+                    "updated_at",
+                    "confidence_provenance",
+                    "superseded_by",
+                    "superseded_at",
+                    "corroborated_by",
+                    "endorsements",
+                    "endorsed_by",
+                    "opposed_by",
+                    "deleted_at",
+                    "effective_confidence",
+                    "sanitization_warnings"
+                  ],
+                  "type": "object"
+                },
+                "score": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "score_components": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "confidence_rank": {
+                      "type": "number"
+                    },
+                    "freshness_rank": {
+                      "type": "number"
+                    },
+                    "graph_rank": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "importance_rank": {
+                      "type": "number"
+                    },
+                    "lexical_rank": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "mmr_score": {
+                      "type": "number"
+                    },
+                    "rrf_score": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "lexical_rank",
+                    "graph_rank",
+                    "confidence_rank",
+                    "importance_rank",
+                    "freshness_rank",
+                    "rrf_score",
+                    "mmr_score"
+                  ],
+                  "type": "object"
+                },
+                "selection_reason": {
+                  "enum": [
+                    "query",
+                    "relationship",
+                    "entity"
+                  ],
+                  "type": "string"
+                },
+                "tokens_used": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "memory",
+                "collection",
+                "score",
+                "tokens_used"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "metadata": {
+            "additionalProperties": false,
+            "properties": {
+              "candidate_count": {
+                "type": "number"
+              },
+              "generated_at": {
+                "type": "string"
+              },
+              "graph_expansions": {
+                "type": "number"
+              },
+              "retrieval_mode": {
+                "const": "lexical_graph_rrf_v1",
+                "type": "string"
+              },
+              "stale_suppressed": {
+                "type": "number"
+              },
+              "token_budget": {
+                "type": "number"
+              },
+              "tokens_used": {
+                "type": "number"
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "generated_at",
+              "token_budget",
+              "tokens_used",
+              "truncated"
+            ],
+            "type": "object"
+          },
+          "representation": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "summary": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "memory_count": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "content",
+              "memory_count"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "memories",
+          "summary",
+          "representation",
+          "formatted_context",
+          "metadata"
         ],
         "type": "object"
       },
@@ -1607,6 +5233,34 @@
         ],
         "type": "object"
       },
+      "WorkspaceSettings": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "policy": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "source_order": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "policy",
+          "source_order"
+        ],
+        "type": "object"
+      },
       "WorkspaceUpdate": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -1887,9 +5541,24 @@
       "get": {
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryAgent"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": "Success"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "List agents"
       },
       "post": {
@@ -2248,47 +5917,223 @@
     },
     "/v1/memories": {
       "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryWrite"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
-          "200": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryRecord"
+                }
+              }
+            },
             "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "Create memory"
       }
     },
     "/v1/memories/{id}": {
       "delete": {
         "responses": {
-          "200": {
-            "description": "Success"
+          "204": {
+            "description": "Deleted"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "Delete memory"
       },
       "get": {
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryRecord"
+                }
+              }
+            },
             "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "Get memory"
       },
       "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryRecord"
+                }
+              }
+            },
             "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "Update memory"
+      }
+    },
+    "/v1/memories/{id}/graph": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Graph"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read permitted memory graph"
       }
     },
     "/v1/memories/browse": {
       "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workspace_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "schema": {
+              "enum": [
+                "private",
+                "shared"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryBrowseResponse"
+                }
+              }
+            },
             "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "Browse readable memories with native query filters"
       }
     },
@@ -2334,7 +6179,23 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemorySearchResponse"
+                }
+              }
+            },
             "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
           }
         },
         "security": [
@@ -2388,11 +6249,42 @@
     },
     "/v1/memories/search": {
       "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemorySearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemorySearchResponse"
+                }
+              }
+            },
             "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "Search memories"
       }
     },
@@ -2462,7 +6354,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MemoryOperation"
+                  "$ref": "#/components/schemas/MemoryQueueJob"
                 }
               }
             },
@@ -2491,7 +6383,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MemoryOperation"
+                  "$ref": "#/components/schemas/MemoryQueueJob"
                 }
               }
             },
@@ -2522,7 +6414,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MemoryOperation"
+                  "$ref": "#/components/schemas/MemoryQueueJob"
                 }
               }
             },
@@ -2550,9 +6442,30 @@
       "post": {
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryQueueJob"
+                }
+              }
+            },
             "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "Run queue job"
       }
     },
@@ -2560,9 +6473,30 @@
       "get": {
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryQueueJob"
+                }
+              }
+            },
             "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "Get queue operation receipt"
       }
     },
@@ -2573,7 +6507,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MemoryOperation"
+                  "$ref": "#/components/schemas/MemoryQueueJob"
                 }
               }
             },
@@ -2604,7 +6538,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MemoryOperation"
+                  "$ref": "#/components/schemas/MemoryQueueStatus"
                 }
               }
             },
@@ -2772,21 +6706,83 @@
     },
     "/v1/sessions/{sessionId}/chat": {
       "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionChatResult"
+                }
+              }
+            },
             "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
           }
         },
-        "summary": "Source-cited session chat; optional SSE"
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Source-cited session chat; native clients may additionally request SSE"
       }
     },
     "/v1/sessions/{sessionId}/context": {
       "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionContextRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionContextResult"
+                }
+              }
+            },
             "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "Build context for a readable session"
       }
     },
@@ -2794,10 +6790,56 @@
       "get": {
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryRecord"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": "Success"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "List readable session memories"
+      }
+    },
+    "/v1/stats": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryStats"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read memory statistics"
       }
     },
     "/v1/webhooks": {
@@ -3421,10 +7463,31 @@
       ],
       "post": {
         "responses": {
-          "200": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DreamSchedule"
+                }
+              }
+            },
             "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "Schedule workspace consolidation"
       }
     },
@@ -3432,9 +7495,30 @@
       "get": {
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSettings"
+                }
+              }
+            },
             "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "summary": "Resolve workspace policy and optional agent/session overrides"
       },
       "parameters": [
