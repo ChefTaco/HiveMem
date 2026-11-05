@@ -150,3 +150,38 @@ Repository documentation can be synchronized separately with the preview-first `
 - Do not commit real tokens; `.env` is ignored.
 - The plugin never sends `agent_id` in memory create/update requests. HiveMem derives identity from the JWT `sub` claim.
 - `DELETE` is a HiveMem soft delete. Server-side prune/archive policy remains controlled by HiveMem.
+
+## Reviewed plugin artifacts
+
+Build an allowlisted plugin archive from an explicit reviewed product revision:
+
+```bash
+npm run build:hermes-plugin -- --revision FULL_REVIEWED_REVISION --output NEW_DIRECTORY
+```
+
+The descriptor pins the archive, plugin version, source revision and runtime file
+checksums. LICENSE, NOTICE and source attribution remain included. Working files,
+profiles and credentials are never build inputs. Extract the verified archive
+into a new staging directory, then install only its `hivemem` directory into the
+explicitly selected private profile's plugin directory. Preserve an existing
+plugin until its exact bytes and upgrade policy have been reviewed. Product
+authorization, a workspace-scoped native agent token and provider selection are
+separate explicit configuration steps. A version preflight alone does not prove
+memory access: run the native CLI `hivemem test --write-check` against an isolated
+installation before activation. The check creates and soft-deletes a synthetic
+private memory. Inference services and models remain external.
+
+With a separately reviewed public native Hermes artifact, the product-owned
+integration proof uses no existing profile or service:
+
+```bash
+npm run test:hermes-native -- --hermes-artifact PRIVATE_NATIVE_DESCRIPTOR --plugin-artifact PRIVATE_PLUGIN_DESCRIPTOR
+```
+
+It starts an isolated in-memory HiveMem HTTPS API, enrolls a non-administrator
+agent restricted to one synthetic workspace, uses the actual public Hermes
+provider loader and native CLI, and verifies write/search/soft-delete plus refused
+credential, TLS, workspace and administrator access. The disposable profile and
+server are removed afterward. This proves native provider registration rather
+than the plugin's standalone fallback class. The proof does not authenticate an
+existing installation or authorize production activation.
