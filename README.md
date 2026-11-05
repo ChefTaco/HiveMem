@@ -1,21 +1,10 @@
 # HiveMem
 
-Fresh suite initialization may set `HIVEMEM_INITIAL_ACCOUNT_FILE` to a protected,
-server-owned mode-0600 JSON file: `{"schema":1,"id":"synthetic-new-memory-account","displayName":"Operator"}`.
-It enrolls that exact identity only in an empty store, issues no bearer token,
-and records completion after durable persistence. Restarts preserve its ID and
-credential generation; changed inputs, unrelated existing accounts or a missing
-persisted identity require reviewed enrollment or recovery. Rehearsals skip this
-initializer. Oathweave issuer/subject mappings remain explicit product configuration.
+HiveMem stores, retrieves and consolidates long-term memory for agents, with workspaces, sessions, a knowledge graph and per-account permissions.
 
-Part of the Hive:Magnus ecosystem. This repository starts from a reviewed public
-Hive source snapshot; `provenance.json` records its revision and original hashes.
+It is one product in the [Hive:Magnus](https://github.com/ChefTaco/hive) suite, and it also runs on its own. The [Hive installer](https://github.com/ChefTaco/hive#readme) deploys tested combinations of the suite's products.
 
-Extraction is in progress. Existing client protocols and migration history are
-retained. The suite SSO/API cutover and production migration are not yet accepted.
-Do not replace an existing deployment using this source snapshot alone.
-
-# HiveMem
+This project was extracted from Hive with its migration history and client protocols intact. `provenance.json` records the source revision and original file hashes.
 
 ```text
                     ___
@@ -203,3 +192,13 @@ the selected deployment. When the service certificate uses a DNS name, set
 bundle when needed. Probes retain certificate verification. Runtime state belongs
 in `/data`; mount only product-owned protected configuration in `/config`.
 Images are local candidates until registry publication and release acceptance.
+
+## Fresh suite initialization
+
+Fresh suite initialization may set `HIVEMEM_INITIAL_ACCOUNT_FILE` to a protected,
+server-owned mode-0600 JSON file: `{"schema":1,"id":"synthetic-new-memory-account","displayName":"Operator"}`.
+It enrolls that exact identity only in an empty store, issues no bearer token,
+and records completion after durable persistence. Restarts preserve its ID and
+credential generation; changed inputs, unrelated existing accounts or a missing
+persisted identity require reviewed enrollment or recovery. Rehearsals skip this
+initializer. Oathweave issuer/subject mappings remain explicit product configuration.
