@@ -2247,14 +2247,6 @@
       }
     },
     "/v1/memories": {
-      "get": {
-        "responses": {
-          "200": {
-            "description": "Success"
-          }
-        },
-        "summary": "List memories"
-      },
       "post": {
         "responses": {
           "200": {
@@ -2281,13 +2273,23 @@
         },
         "summary": "Get memory"
       },
-      "patch": {
+      "put": {
         "responses": {
           "200": {
             "description": "Success"
           }
         },
         "summary": "Update memory"
+      }
+    },
+    "/v1/memories/browse": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Browse readable memories with native query filters"
       }
     },
     "/v1/memories/conflicts": {

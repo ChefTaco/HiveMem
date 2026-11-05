@@ -1,5 +1,8 @@
 # Changelog
 
+- Correct the owned memory contract to advertise the existing browse endpoint and
+  PUT updates; remove the unsupported collection GET and PATCH declarations.
+
 - Allow the native Hermes plugin to use an explicit canonical HTTPS ingress
   prefix while preserving origin-only endpoints and strict redirect/TLS checks.
 

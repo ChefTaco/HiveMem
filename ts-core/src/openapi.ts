@@ -353,12 +353,14 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
       "/v1/health/ready": { get: operation("Readiness") },
       "/v1/auth/login": { post: operation("Token compatibility login") },
       "/v1/memories": {
-        get: operation("List memories"),
         post: operation("Create memory"),
+      },
+      "/v1/memories/browse": {
+        get: operation("Browse readable memories with native query filters"),
       },
       "/v1/memories/{id}": {
         get: operation("Get memory"),
-        patch: operation("Update memory"),
+        put: operation("Update memory"),
         delete: operation("Delete memory"),
       },
       "/v1/memories/search": { post: operation("Search memories") },
