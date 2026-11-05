@@ -1,5 +1,14 @@
 # Changelog
 
+- Add product-owned actor credential operations with encrypted, expiring receipts,
+  exact owner/policy-bound replay, preserved credential deadlines and generation
+  containment. Enrollment requires current workspace authority and explicit scopes.
+
+- Expose scoped conflict review and consolidation history on the direct product API,
+  with owned session/webhook/graph browser contracts. Reserve session IDs, enforce
+  current workspace permissions on session and webhook mutations/history, and require
+  job ownership/workspace authorization for queue retry and cancellation.
+
 - Authorize read-only conflict detection with memory read permission, preserving
   workspace access checks and avoiding false mutation audit receipts.
 - Reserve archived workspace IDs, require ownership for restoration or owner grants,

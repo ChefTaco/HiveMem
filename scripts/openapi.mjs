@@ -1,4 +1,22 @@
-import { buildHiveMemOpenApiSpec } from "../ts-core/src/openapi.ts";
+import { registerHooks } from "node:module";
+import { existsSync } from "node:fs";
+// Resolve the owned TypeScript contract dependencies without requiring stale build output.
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (
+      specifier.startsWith("./") &&
+      specifier.endsWith(".js") &&
+      context.parentURL?.startsWith(
+        new URL("../ts-core/src/", import.meta.url).href,
+      )
+    ) {
+      const source = new URL(specifier.slice(0, -3) + ".ts", context.parentURL);
+      if (existsSync(source)) return nextResolve(source.href, context);
+    }
+    return nextResolve(specifier, context);
+  },
+});
+const { buildHiveMemOpenApiSpec } = await import("../ts-core/src/openapi.ts");
 import { readFileSync, writeFileSync } from "node:fs";
 const file = new URL("../docs/openapi.json", import.meta.url);
 const document = buildHiveMemOpenApiSpec();

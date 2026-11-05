@@ -1,4 +1,6 @@
 import { semanticConfig, SemanticIndex } from "./semantic-index.js";
+import { actorCredentialDigest, actorCredentialSchema, actorReceiptCipher } from './actor-credentials.js';
+import { signToken } from './auth.js';
 import { allowedPrivateWebhookHost, deliverWebhook, WebhookDeliveryError, type WebhookRequest } from "./webhook-transport.js";
 import { createHash, randomUUID } from "node:crypto";
 import { deterministicEmbedding, type HiveMemPersistence, type HiveMemSnapshot, type PersistedAgentRecord } from "./persistence.js";
@@ -1641,6 +1643,7 @@ export class InMemoryHiveMemStore {
 
   createSession(principal: AuthPrincipal, body: unknown): SessionRecord {
     const parsed = parseSessionCreate(body);
+    if (parsed.session_id && this.sessions.has(parsed.session_id)) throw new ConflictError("Session ID is reserved; update the existing session or choose a new ID");
     this.assertWorkspacePermission(principal, parsed.workspace_id ?? "default", "write");
     const timestamp = nowIso();
     const session: SessionRecord = {
@@ -1679,7 +1682,7 @@ export class InMemoryHiveMemStore {
     const workspaceId = params.get("workspace_id") ?? "default";
     this.assertWorkspacePermission(principal, workspaceId, "read");
     return [...this.sessions.values()]
-      .filter((session) => !session.deleted_at)
+      .filter((session) => !session.deleted_at && this.canReadWorkspace(principal, session.workspace_id))
       .filter((session) => session.owner_agent_id === principal.agentId || session.scope === "shared")
       .filter((session) => workspaceId === "*" || session.workspace_id === workspaceId)
       .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
@@ -2145,6 +2148,7 @@ export class InMemoryHiveMemStore {
 
   resolveDashboardConflict(principal: AuthPrincipal, memoryId: string, body: unknown): Record<string, unknown> {
     const memory = this.getMemory(principal, memoryId);
+    this.assertWorkspacePermission(principal, memory.workspace_id, "write");
     const raw = asJsonObject(body, "conflict resolution");
     assertCanWrite(memory, principal);
     const action = optionalString(raw.action, "action") ?? "acknowledge";
@@ -2219,6 +2223,7 @@ export class InMemoryHiveMemStore {
     const session = this.sessions.get(sessionId);
     if (!session || session.deleted_at) throw new NotFoundError("Session not found");
     if (session.owner_agent_id !== principal.agentId) throw new ForbiddenError("Session is owned by another agent");
+    this.assertWorkspacePermission(principal, session.workspace_id, "write");
     const raw = asJsonObject(body, "session update");
     const title = optionalNullableString(raw.title, "title");
     const workspaceId = optionalString(raw.workspace_id, "workspace_id");
@@ -2250,6 +2255,7 @@ export class InMemoryHiveMemStore {
     const session = this.sessions.get(sessionId);
     if (!session || session.deleted_at) throw new NotFoundError("Session not found");
     if (session.owner_agent_id !== principal.agentId) throw new ForbiddenError("Session is owned by another agent");
+    this.assertWorkspacePermission(principal, session.workspace_id, "write");
     const timestamp = nowIso();
     this.sessions.set(sessionId, { ...session, deleted_at: timestamp, updated_at: timestamp });
     this.queuePersistence();
@@ -2283,11 +2289,13 @@ export class InMemoryHiveMemStore {
   getWebhook(principal: AuthPrincipal, endpointId: string): WebhookEndpointRecord {
     const endpoint = this.webhooks.get(endpointId);
     if (!endpoint || endpoint.deleted_at || (!isAdmin(principal) && endpoint.owner_agent_id !== principal.agentId)) throw new NotFoundError("Webhook endpoint not found");
+    this.assertWorkspacePermission(principal, endpoint.workspace_id, "read");
     return this.publicWebhook(endpoint);
   }
 
   updateWebhook(principal: AuthPrincipal, endpointId: string, body: unknown): WebhookEndpointRecord {
     const endpoint = this.getWebhook(principal, endpointId);
+    this.assertWorkspacePermission(principal, endpoint.workspace_id, "write");
     const raw = asJsonObject(body, "webhook update");
     const url = optionalString(raw.url, "url");
     if (url) assertWebhookUrl(url);
@@ -2310,6 +2318,7 @@ export class InMemoryHiveMemStore {
 
   deleteWebhook(principal: AuthPrincipal, endpointId: string): WebhookEndpointRecord {
     const endpoint = this.getWebhook(principal, endpointId);
+    this.assertWorkspacePermission(principal, endpoint.workspace_id, "write");
     const updated = { ...endpoint, enabled: false, deleted_at: nowIso(), updated_at: nowIso() };
     this.webhooks.set(endpointId, updated);
     this.queuePersistence();
@@ -2707,7 +2716,7 @@ export class InMemoryHiveMemStore {
   }
 
   capabilities(): Record<string, string> {
-    return { storage: this.persistence?.kind ?? "volatile", retrieval: semanticConfig() ? "lexical-and-configured-semantic" : "deterministic-lexical", embedding: "hivemem-token-hash-v1", queue: this.workerManaged ? (this.workerEnabled ? "managed" : "disabled") : "manual", webhooks: "https", lifecycle: "retention-and-archive", backup: "operator-script", restore: "operator-script", critic: "unavailable", multimodal: "references-only", credential_expiry: "absolute-deadline", operation_matrix: "/v1/capabilities/operations" };
+    return { storage: this.persistence?.kind ?? "volatile", retrieval: semanticConfig() ? "lexical-and-configured-semantic" : "deterministic-lexical", embedding: "hivemem-token-hash-v1", queue: this.workerManaged ? (this.workerEnabled ? "managed" : "disabled") : "manual", webhooks: "https", lifecycle: "retention-and-archive", backup: "operator-script", restore: "operator-script", critic: "unavailable", multimodal: "references-only", credential_expiry: "absolute-deadline", actor_credentials: "idempotent-receipt-v1", operation_matrix: "/v1/capabilities/operations" };
   }
 
   tokenInventory(principal: AuthPrincipal): never {
@@ -2798,6 +2807,59 @@ export class InMemoryHiveMemStore {
   credentialGeneration(agentId: string): number {
     const value = this.agents.get(agentId)?.metadata?.token_generation;
     return typeof value === "number" ? value : 0;
+  }
+
+  /** Mutation and encrypted receipt enter one write-ahead snapshot. A response
+   * is returned only after its checkpoint is durable (see server sendJson). */
+  actorCredentials(principal: AuthPrincipal, operationId: string, body: unknown, secret: string): JsonObject {
+    if (!isAdmin(principal) && !principal.scopes.includes('admin:agents')) throw new ForbiddenError('admin:agents is required');
+    if (!/^[a-f0-9]{64}$/.test(operationId)) throw new ValidationError('operation ID must be a SHA-256 identifier');
+    const parsed = actorCredentialSchema.safeParse(body);
+    if (!parsed.success) throw new ValidationError('Invalid explicit actor credential policy');
+    const policy = parsed.data, digest = actorCredentialDigest(policy), id = 'actor-credential:' + operationId;
+    const owner = String(principal.rawClaims.iss ?? 'native') + ':' + principal.agentId;
+    const receipt = this.operations.get(id), cipher = actorReceiptCipher(secret);
+    if (receipt) {
+      if (receipt.owner !== owner || receipt.request_digest !== digest) throw new ConflictError('Operation belongs to another operator or policy');
+      if (receipt.action === 'disable') return { ok: true, agent_id: policy.agent_id, operation_id: operationId };
+      if (typeof receipt.encrypted_receipt !== 'string' || Number(receipt.receipt_expires_at) <= Date.now()) throw Object.assign(new Error('Credential receipt expired or acknowledged; use a new explicitly reviewed rotation'), { status: 410 });
+      return JSON.parse(cipher.decrypt(receipt.encrypted_receipt)) as JsonObject;
+    }
+    const previousDeadline = this.agents.get(policy.agent_id)?.metadata.actor_credential_deadline;
+    const deadline = Math.min(Date.parse(policy.expires_at), typeof previousDeadline === 'number' ? previousDeadline : Infinity);
+    if (policy.action !== 'disable' && (deadline <= Date.now() + 1000 || deadline > Date.now() + 720 * 3600_000)) throw new ValidationError('Credential deadline must be within the next 720 hours');
+    this.assertWorkspacePermission(principal, policy.workspace_id, 'admin');
+    if (policy.action !== 'disable' && !isAdmin(principal) && !principal.scopes.includes('admin:all') && policy.scopes.some(scope => !principal.scopes.includes(scope))) throw new ForbiddenError('Cannot grant Memory permissions the operator does not hold');
+    const existing = this.agents.get(policy.agent_id);
+    if (policy.action === 'enroll' && existing) throw new ConflictError('Agent already exists; preserve its identity and use reviewed rotation');
+    if (policy.action !== 'enroll' && !existing) throw new NotFoundError('Agent does not exist');
+    if (policy.action === 'rotate' && existing && (existing as AgentInfo & { active?: boolean }).active === false) throw new ConflictError('Disabled agents cannot rotate');
+    const generation = this.credentialGeneration(policy.agent_id) + (policy.action === 'enroll' ? 0 : 1);
+    const result: JsonObject = { ok: true, agent_id: policy.agent_id, operation_id: operationId, expires_at: new Date(deadline).toISOString() };
+    if (policy.action !== 'disable') result.token = signToken(secret, { sub: policy.agent_id, role: 'agent', scope: policy.scopes.join(' '), workspace_ids: [policy.workspace_id], exp: Math.floor(deadline / 1000), token_generation: generation });
+    // Finish all validation and encryption before changing live maps.
+    const encrypted = policy.action === 'disable' ? null : cipher.encrypt(JSON.stringify(result));
+    this.agents.set(policy.agent_id, {
+      ...(existing ?? { agent_id: policy.agent_id, created_at: nowIso(), memory_counts: {} }),
+      display_name: policy.display_name, description: policy.description,
+      ...(policy.action === 'disable' ? { active: false } : {}),
+      metadata: { ...existing?.metadata, token_generation: generation, actor_credential_operation: operationId, actor_credential_deadline: deadline },
+    });
+    const workspace = this.workspaces.get(policy.workspace_id);
+    if (workspace && policy.action === 'enroll') this.workspaces.set(policy.workspace_id, { ...workspace, members: [...workspace.members.filter(member => member.agent_id !== policy.agent_id), { agent_id: policy.agent_id, role: 'member', scopes: policy.scopes, added_by: principal.agentId, created_at: nowIso(), updated_at: nowIso() }], updated_at: nowIso() });
+    if (policy.action !== 'enroll') for (const [key, previous] of this.operations) if (previous.kind === 'actor-credential' && previous.agent_id === policy.agent_id) this.operations.set(key, { ...previous, encrypted_receipt: null, receipt_expires_at: null });
+    this.operations.set(id, { id, kind: 'actor-credential', owner, request_digest: digest, action: policy.action, agent_id: policy.agent_id, encrypted_receipt: encrypted, receipt_expires_at: encrypted ? Math.min(Date.now() + 900_000, deadline) : null, created_at: nowIso() });
+    this.queuePersistence();
+    return result;
+  }
+
+  acknowledgeActorCredentials(principal: AuthPrincipal, operationId: string): void {
+    if (!isAdmin(principal) && !principal.scopes.includes('admin:agents')) throw new ForbiddenError('admin:agents is required');
+    const id = 'actor-credential:' + operationId, receipt = this.operations.get(id);
+    const owner = String(principal.rawClaims.iss ?? 'native') + ':' + principal.agentId;
+    if (!receipt || receipt.owner !== owner) throw new NotFoundError('Owned credential operation does not exist');
+    this.operations.set(id, { ...receipt, encrypted_receipt: null, receipt_expires_at: null });
+    this.queuePersistence();
   }
 
   assertCredentialActive(principal: AuthPrincipal): void {
@@ -3223,6 +3285,10 @@ export class InMemoryHiveMemStore {
     this.assertWorkspaceRecordPermission(principal, workspace, permission);
   }
 
+  private canReadWorkspace(principal: AuthPrincipal, workspaceId: string): boolean {
+    try { this.assertWorkspacePermission(principal, workspaceId, "read"); return true; } catch { return false; }
+  }
+
   private publicWebhook(endpoint: WebhookEndpointRecord): WebhookEndpointRecord {
     const { signing_secret: _secret, ...safe } = endpoint as WebhookEndpointRecord & { signing_secret?: string };
     return safe;
@@ -3231,7 +3297,7 @@ export class InMemoryHiveMemStore {
   listWebhooks(principal: AuthPrincipal, params: URLSearchParams): WebhookEndpointRecord[] {
     const workspaceId = params.get("workspace_id") ?? "default";
     return [...this.webhooks.values()]
-      .filter((endpoint) => !endpoint.deleted_at)
+      .filter((endpoint) => !endpoint.deleted_at && this.canReadWorkspace(principal, endpoint.workspace_id))
       .filter((endpoint) => isAdmin(principal) || endpoint.owner_agent_id === principal.agentId)
       .filter((endpoint) => workspaceId === "*" || endpoint.workspace_id === workspaceId)
       .sort((left, right) => right.updated_at.localeCompare(left.updated_at)).map((endpoint) => this.publicWebhook(endpoint));
@@ -3266,6 +3332,7 @@ export class InMemoryHiveMemStore {
 
   testWebhook(principal: AuthPrincipal, body: unknown): WebhookTestEmitResponse {
     const parsed = parseWebhookTest(body);
+    this.assertWorkspacePermission(principal, parsed.workspace_id, "write");
     const eventId = randomUUID();
     const endpoints = this.matchingWebhooks(principal, parsed.workspace_id, parsed.event_type, true);
     const deliveryIds = endpoints.map((endpoint) => this.enqueueWebhookDelivery(endpoint, eventId, parsed.event_type, { data: parsed.data, test: true }).id);
@@ -3278,6 +3345,7 @@ export class InMemoryHiveMemStore {
     const workspaceId = params.get("workspace_id");
     const eventType = parseEnum(params.get("event_type") ?? undefined, "event_type", webhookEventTypes);
     const records = [...this.webhookDeliveries.values()]
+      .filter((delivery) => this.canReadWorkspace(principal, delivery.workspace_id))
       .filter((delivery) => isAdmin(principal) || delivery.owner_agent_id === principal.agentId)
       .filter((delivery) => !workspaceId || workspaceId === "*" || delivery.workspace_id === workspaceId)
       .filter((delivery) => !eventType || delivery.event_type === eventType)
@@ -3288,6 +3356,7 @@ export class InMemoryHiveMemStore {
   getWebhookDelivery(principal: AuthPrincipal, id: string): WebhookDeliveryRecord {
     const delivery = this.webhookDeliveries.get(id);
     if (!delivery || (!isAdmin(principal) && delivery.owner_agent_id !== principal.agentId)) throw new NotFoundError("Webhook delivery not found");
+    this.assertWorkspacePermission(principal, delivery.workspace_id, "read");
     return delivery;
   }
 
@@ -3515,6 +3584,7 @@ export class InMemoryHiveMemStore {
     const now = nowIso();
     const job = [...this.queueJobs.values()]
       .filter((candidate) => candidate.status === "pending" || candidate.status === "failed")
+      .filter((candidate) => (isAdmin(principal) || candidate.owner_agent_id === principal.agentId) && this.canReadWorkspace(principal, candidate.workspace_id))
       .filter((candidate) => !candidate.not_before || candidate.not_before <= now)
       .filter((candidate) => !taskType || candidate.task_type === taskType)
       .filter((candidate) => !workspaceId || candidate.workspace_id === workspaceId)
@@ -4053,6 +4123,7 @@ export class InMemoryHiveMemStore {
     assertQueueAdmin(principal);
     const job = this.queueJobs.get(id);
     if (!job) throw new NotFoundError("Queue job not found");
+    this.getQueueJob(principal, id);
     if (!['failed', 'dead_letter', 'cancelled'].includes(job.status)) throw new ConflictError('Only failed, dead-letter or cancelled jobs can be retried');
     const updated: QueueJobRecord = {
       ...job,
@@ -4073,6 +4144,7 @@ export class InMemoryHiveMemStore {
     assertQueueAdmin(principal);
     const job = this.queueJobs.get(id);
     if (!job) throw new NotFoundError("Queue job not found");
+    this.getQueueJob(principal, id);
     if (job.status === 'cancelled') return job;
     if (job.status === 'in_progress' || job.status === 'completed') throw new ConflictError('Work already started; cancellation cannot undo its side effects');
 

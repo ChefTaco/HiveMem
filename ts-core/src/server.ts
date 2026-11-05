@@ -182,6 +182,7 @@ function requireScope(principal: AuthPrincipal, required: string): void {
 }
 
 function requiredScope(method: string, pathname: string): string | null {
+  if (pathname.startsWith('/v1/actor-credentials/')) return 'admin:agents';
   if (pathname.startsWith("/v1/auth/")) return null;
   if (method === 'POST' && ['/v1/memories/search','/v1/memories/search/text','/v1/memories/search/hybrid','/v1/memories/conflicts'].includes(pathname)) return 'memories:read';
   if (pathname.startsWith("/v1/admin/") || pathname === "/v1/backup" || pathname === "/v1/restore") return "admin:all";
@@ -193,6 +194,7 @@ function requiredScope(method: string, pathname: string): string | null {
   if (pathname.startsWith("/v1/workspaces")) return method === "GET" ? "workspaces:read" : "workspaces:write";
   if (pathname.startsWith("/v1/sessions")) return method === "GET" ? "sessions:read" : "sessions:write";
   if (pathname.startsWith("/v1/context") || pathname.startsWith("/v1/chat")) return "context:read";
+  if (pathname.startsWith("/v1/conflicts") || pathname.startsWith("/v1/consolidation")) return method === "GET" ? "memories:read" : "memories:write";
   if (pathname.startsWith("/v1/knowledge/")) return method === "GET" ? "memories:read" : "memories:write";
   if (pathname.startsWith("/v1/memories") || pathname.startsWith("/v1/episodes") || pathname.startsWith("/v1/graph") || pathname.startsWith("/v1/peers") || pathname.startsWith("/v1/conclusions") || pathname.startsWith("/v1/archive")) {
     return method === "GET" ? "memories:read" : "memories:write";
@@ -732,6 +734,16 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       if (method === "GET" && url.pathname === "/v1/capabilities") { await sendJson(response, 200, store.capabilities()); return; }
       if (method === 'GET' && url.pathname === '/v1/capabilities/operations') { await sendJson(response, 200, { operations: memoryOperations }); return; }
 
+      const actorCredentialId = pathId(url.pathname.replace(/\/receipt$/, ''), '/v1/actor-credentials/');
+      if (actorCredentialId && method === 'POST' && !url.pathname.endsWith('/receipt')) {
+        response.setHeader('Cache-Control', 'no-store');
+        await sendJson(response, 200, store.actorCredentials(principal, actorCredentialId, await readBody(request), jwtSecret)); return;
+      }
+      if (actorCredentialId && method === 'DELETE' && url.pathname.endsWith('/receipt')) {
+        store.acknowledgeActorCredentials(principal, actorCredentialId);
+        await sendJson(response, 200, { ok: true }); return;
+      }
+
       if (method === "GET" && url.pathname === "/v1/auth/me") {
         await sendJson(response, 200, store.authPrincipal(principal));
         return;
@@ -1019,6 +1031,24 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
           await sendJson(response, 202, store.scheduleWorkspaceDream(principal, workspaceId, await readBody(request)));
           return;
         }
+      }
+
+      if (method === "GET" && url.pathname === "/v1/conflicts") {
+        await sendJson(response, 200, store.dashboardConflicts(principal, url.searchParams)); return;
+      }
+      const conflictResolveId = url.pathname.endsWith("/resolve") ? pathId(url.pathname.slice(0, -"/resolve".length), "/v1/conflicts/") : undefined;
+      if (conflictResolveId && method === "POST") {
+        await sendJson(response, 200, store.resolveDashboardConflict(principal, conflictResolveId, await readBody(request))); return;
+      }
+      if (method === "GET" && url.pathname === "/v1/consolidation/status") {
+        await sendJson(response, 200, store.consolidationStatus(principal, url.searchParams)); return;
+      }
+      if (method === "GET" && url.pathname === "/v1/consolidation/logs") {
+        await sendJson(response, 200, store.consolidationLogs(principal, url.searchParams)); return;
+      }
+      const consolidationRunId = pathId(url.pathname, "/v1/consolidation/logs/");
+      if (consolidationRunId && method === "GET") {
+        await sendJson(response, 200, store.consolidationLog(principal, consolidationRunId)); return;
       }
 
       if (method === "GET" && url.pathname === "/v1/graph/entities") {

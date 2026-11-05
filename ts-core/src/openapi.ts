@@ -1,5 +1,6 @@
 // Public API baseline extracted from Hive; complete schema coverage remains pending.
 import { z } from "zod";
+import { actorCredentialSchema } from "./actor-credentials.js";
 
 // Owned browser contracts. Native clients retain their existing compatibility APIs.
 const jsonObject = z.record(z.string(), z.unknown());
@@ -62,7 +63,151 @@ export const MemoryProfileSchema = z.object({
   scopes: z.array(z.string()),
   workspace_ids: z.array(z.string()).nullable(),
 });
+// Product-owned contracts for the consolidated memory console.
+export const SessionSchema = z.object({
+  session_id: z.string(),
+  owner_agent_id: z.string(),
+  scope: z.enum(["private", "shared"]),
+  title: nullableText,
+  workspace_id: z.string(),
+  metadata: jsonObject,
+  created_at: z.string(),
+  updated_at: z.string(),
+  deleted_at: nullableText,
+});
+export const SessionCreateSchema = z.object({
+  session_id: z.string().min(1).optional(),
+  title: nullableText.optional(),
+  scope: z.enum(["private", "shared"]).optional(),
+  workspace_id: z.string().min(1).optional(),
+  metadata: jsonObject.optional(),
+});
+export const SessionUpdateSchema = SessionCreateSchema.omit({
+  session_id: true,
+  scope: true,
+});
+const webhookEvent = z.enum([
+  "memory.created",
+  "session.created",
+  "queue.empty",
+  "summary.updated",
+  "peer_card.updated",
+  "conflict.detected",
+  "webhook.test",
+]);
+export const WebhookWriteSchema = z.object({
+  url: z.string().url(),
+  workspace_id: z.string().min(1),
+  event_types: z.array(webhookEvent),
+  enabled: z.boolean(),
+  headers: z.record(z.string(), z.string()),
+  metadata: jsonObject,
+  secret: z.string().optional(),
+});
+export const WebhookSchema = WebhookWriteSchema.omit({ secret: true }).extend({
+  id: z.string(),
+  owner_agent_id: z.string(),
+  has_secret: z.boolean(),
+  last_status: z.enum(["queued", "delivered", "failed"]).nullable(),
+  last_error: nullableText,
+  last_delivered_at: nullableText,
+  created_at: z.string(),
+  updated_at: z.string(),
+  deleted_at: nullableText,
+});
+export const WebhookTestSchema = z.object({
+  workspace_id: z.string().min(1),
+  event_type: webhookEvent,
+  data: jsonObject,
+});
+export const WebhookTestResultSchema = z.object({
+  event_id: z.string(),
+  queued_deliveries: z.number().int().min(0),
+  delivery_ids: z.array(z.string()),
+});
+export const WebhookDeliverySchema = z.object({
+  id: z.string(),
+  endpoint_id: z.string(),
+  owner_agent_id: z.string(),
+  workspace_id: z.string(),
+  event_id: z.string(),
+  event_type: webhookEvent,
+  nonce: z.string(),
+  status: z.enum(["queued", "delivered", "failed"]),
+  attempts: z.number().int().min(0),
+  url: z.string(),
+  response_status: z.number().nullable(),
+  error: nullableText,
+  created_at: z.string(),
+  updated_at: z.string(),
+  delivered_at: nullableText,
+});
+export const WebhookDeliveriesSchema = z.object({
+  deliveries: z.array(WebhookDeliverySchema),
+  total: z.number().int().min(0),
+  offset: z.number().int().min(0),
+  limit: z.number().int().min(1),
+});
+export const GraphNodeSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  type: z.string(),
+  record_type: z.enum(["entity", "memory", "conclusion"]),
+  metadata: jsonObject,
+});
+export const GraphEdgeSchema = z.object({
+  id: z.string(),
+  source: z.string(),
+  target: z.string(),
+  type: z.string(),
+  confidence: z.number(),
+  valid_from: nullableText,
+  valid_to: nullableText,
+  observed_at: nullableText,
+  superseded_by: nullableText,
+  metadata: jsonObject,
+});
+export const GraphSchema = z.object({
+  anchor_id: nullableText,
+  nodes: z.array(GraphNodeSchema),
+  edges: z.array(GraphEdgeSchema),
+});
+// Durable operation details evolve independently; the owning API validates their payloads.
+export const MemoryOperationSchema = jsonObject;
+export const ConflictResolveSchema = z.object({
+  action: z.enum(["acknowledge", "dismiss"]),
+});
+export const ConsolidationRequestSchema = z.object({
+  workspace_id: z.string().min(1),
+  memory_ids: z.array(z.string().min(1)).max(256),
+  strategy: z.string().min(1),
+  operation_id: z.string().min(1),
+  priority: z.number().optional(),
+});
 const browserSchemas = {
+  ActorCredentialRequest: actorCredentialSchema,
+  ActorCredentialResult: z.object({
+    ok: z.boolean(),
+    agent_id: z.string(),
+    operation_id: z.string(),
+    expires_at: z.string().nullable().optional(),
+    token: z.string().optional(),
+  }),
+  Session: SessionSchema,
+  SessionCreate: SessionCreateSchema,
+  SessionUpdate: SessionUpdateSchema,
+  Webhook: WebhookSchema,
+  WebhookWrite: WebhookWriteSchema,
+  WebhookTest: WebhookTestSchema,
+  WebhookTestResult: WebhookTestResultSchema,
+  WebhookDelivery: WebhookDeliverySchema,
+  WebhookDeliveries: WebhookDeliveriesSchema,
+  GraphNode: GraphNodeSchema,
+  GraphEdge: GraphEdgeSchema,
+  Graph: GraphSchema,
+  MemoryOperation: MemoryOperationSchema,
+  ConflictResolve: ConflictResolveSchema,
+  ConsolidationRequest: ConsolidationRequestSchema,
   WorkspaceMember: WorkspaceMemberSchema,
   WorkspacePolicy: WorkspacePolicySchema,
   Workspace: WorkspaceSchema,
@@ -107,6 +252,24 @@ function browserOperation(
     },
   };
 }
+function browserArrayOperation(summary: string, response: string) {
+  return {
+    ...browserOperation(summary, response),
+    responses: {
+      "200": {
+        description: "Success",
+        content: {
+          "application/json": {
+            schema: {
+              type: "array",
+              items: { $ref: "#/components/schemas/" + response },
+            },
+          },
+        },
+      },
+    },
+  };
+}
 function operation(summary: string): Record<string, unknown> {
   return {
     summary,
@@ -138,6 +301,47 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
       ),
     },
     paths: {
+      "/v1/actor-credentials/{operationId}": {
+        parameters: [
+          {
+            name: "operationId",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          },
+        ],
+        post: {
+          ...browserOperation(
+            "Durable agent credential operation; explicit admin:agents, workspace authorization and scope subset required; encrypted receipt replay expires after fifteen minutes",
+            "ActorCredentialResult",
+            "ActorCredentialRequest",
+          ),
+          responses: {
+            ...browserOperation("Credential operation", "ActorCredentialResult")
+              .responses,
+            "410": {
+              description:
+                "Receipt acknowledged or expired; reconcile the original outcome",
+            },
+          },
+        },
+      },
+      "/v1/actor-credentials/{operationId}/receipt": {
+        parameters: [
+          {
+            name: "operationId",
+            in: "path",
+            required: true,
+            schema: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          },
+        ],
+        delete: {
+          ...operation(
+            "Acknowledge exact credential receipt; owner and admin:agents required",
+          ),
+          security: [{ bearerAuth: [] }],
+        },
+      },
       "/v1/profile": {
         get: browserOperation(
           "Current product identity without bearer claims",
@@ -158,7 +362,171 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
         delete: operation("Delete memory"),
       },
       "/v1/memories/search": { post: operation("Search memories") },
-      "/v1/memories/conflicts": {post: {...operation("Read-only conflict detection requires memories:read; workspace access is enforced"), security: [{bearerAuth: []}], requestBody: {required: true, content: {"application/json": {schema: {type: "object", required: ["content"], properties: {content: {type: "string", minLength: 1}, workspace_id: {type: "string"}, scope: {enum: ["private", "shared"]}, type: {enum: ["episodic", "semantic", "procedural"]}, limit: {type: "number"}}}}}}}},
+      "/v1/memories/conflicts": {
+        post: {
+          ...operation(
+            "Read-only conflict detection requires memories:read; workspace access is enforced",
+          ),
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["content"],
+                  properties: {
+                    content: { type: "string", minLength: 1 },
+                    workspace_id: { type: "string" },
+                    scope: { enum: ["private", "shared"] },
+                    type: { enum: ["episodic", "semantic", "procedural"] },
+                    limit: { type: "number" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/v1/sessions": {
+        get: browserArrayOperation("List visible sessions", "Session"),
+        post: browserOperation(
+          "Create session; IDs remain reserved",
+          "Session",
+          "SessionCreate",
+          "201",
+        ),
+      },
+      "/v1/sessions/{sessionId}": {
+        get: browserOperation("Get session", "Session"),
+        put: browserOperation(
+          "Update owned session",
+          "Session",
+          "SessionUpdate",
+        ),
+        delete: {
+          ...operation("Archive owned session"),
+          responses: { "204": { description: "Archived" } },
+        },
+      },
+      "/v1/sessions/{sessionId}/memories": {
+        get: operation("List readable session memories"),
+      },
+      "/v1/sessions/{sessionId}/context": {
+        post: operation("Build context for a readable session"),
+      },
+      "/v1/sessions/{sessionId}/chat": {
+        post: operation("Source-cited session chat; optional SSE"),
+      },
+      "/v1/webhooks": {
+        get: browserArrayOperation(
+          "List permitted webhook endpoints",
+          "Webhook",
+        ),
+        post: browserOperation(
+          "Create webhook",
+          "Webhook",
+          "WebhookWrite",
+          "201",
+        ),
+      },
+      "/v1/webhooks/{webhookId}": {
+        get: browserOperation("Get permitted webhook", "Webhook"),
+        put: browserOperation("Update webhook", "Webhook", "WebhookWrite"),
+        delete: browserOperation("Disable and archive webhook", "Webhook"),
+      },
+      "/v1/webhooks/test": {
+        post: browserOperation(
+          "Queue a workspace-wide test for all enabled owned endpoints",
+          "WebhookTestResult",
+          "WebhookTest",
+          "202",
+        ),
+      },
+      "/v1/webhooks/deliveries": {
+        get: browserOperation(
+          "List permitted webhook delivery history",
+          "WebhookDeliveries",
+        ),
+      },
+      "/v1/webhooks/deliveries/{deliveryId}": {
+        get: browserOperation(
+          "Get permitted webhook delivery",
+          "WebhookDelivery",
+        ),
+      },
+      "/v1/graph/entities": {
+        get: browserArrayOperation("List readable entities", "GraphNode"),
+      },
+      "/v1/graph/relations": {
+        get: browserArrayOperation("List readable relations", "GraphEdge"),
+      },
+      "/v1/graph/neighborhood": {
+        get: browserOperation("Read bounded graph neighborhood", "Graph"),
+      },
+      "/v1/graph/entities/{entityId}": {
+        get: browserOperation("Read entity evidence", "MemoryOperation"),
+      },
+      "/v1/conflicts": {
+        get: browserOperation(
+          "List readable unresolved conflicts",
+          "MemoryOperation",
+        ),
+      },
+      "/v1/conflicts/{memoryId}/resolve": {
+        post: browserOperation(
+          "Acknowledge or dismiss readable owned-memory conflicts",
+          "MemoryOperation",
+          "ConflictResolve",
+        ),
+      },
+      "/v1/consolidation/status": {
+        get: browserOperation(
+          "Read workspace consolidation status",
+          "MemoryOperation",
+        ),
+      },
+      "/v1/consolidation/logs": {
+        get: browserOperation(
+          "Read workspace consolidation history",
+          "MemoryOperation",
+        ),
+      },
+      "/v1/consolidation/logs/{runId}": {
+        get: browserOperation(
+          "Read permitted consolidation result",
+          "MemoryOperation",
+        ),
+      },
+      "/v1/memories/consolidate": {
+        post: browserOperation(
+          "Enqueue a durable consolidation operation",
+          "MemoryOperation",
+          "ConsolidationRequest",
+        ),
+      },
+      "/v1/queue/status": {
+        get: browserOperation(
+          "Read permitted queue status and jobs",
+          "MemoryOperation",
+        ),
+      },
+      "/v1/queue/jobs/{id}": {
+        get: browserOperation("Read permitted job detail", "MemoryOperation"),
+        delete: browserOperation(
+          "Cancel work before execution",
+          "MemoryOperation",
+        ),
+      },
+      "/v1/queue/jobs/{id}/retry": {
+        post: browserOperation(
+          "Retry failed work after inspection",
+          "MemoryOperation",
+        ),
+      },
+      "/v1/queue/run-next": {
+        post: browserOperation("Run next pending job", "MemoryOperation"),
+      },
       "/v1/context": { post: operation("Build context pack") },
       "/v1/queue/jobs": {
         get: operation("List queue jobs"),

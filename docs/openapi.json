@@ -1,6 +1,385 @@
 {
   "components": {
     "schemas": {
+      "ActorCredentialRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "enroll",
+              "rotate",
+              "disable"
+            ],
+            "type": "string"
+          },
+          "agent_id": {
+            "maxLength": 32,
+            "minLength": 2,
+            "pattern": "^[a-z0-9_-]+$",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 512,
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 128,
+            "minLength": 2,
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9-]*(?::[a-z0-9-]+)+$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "workspace_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-z0-9_-]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "agent_id",
+          "display_name",
+          "description",
+          "scopes",
+          "workspace_id",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "ActorCredentialResult": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "agent_id",
+          "operation_id"
+        ],
+        "type": "object"
+      },
+      "ConflictResolve": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "acknowledge",
+              "dismiss"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "ConsolidationRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "memory_ids": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 256,
+            "type": "array"
+          },
+          "operation_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "priority": {
+            "type": "number"
+          },
+          "strategy": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "workspace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "memory_ids",
+          "strategy",
+          "operation_id"
+        ],
+        "type": "object"
+      },
+      "Graph": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "anchor_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "edges": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "confidence": {
+                  "type": "number"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "observed_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "source": {
+                  "type": "string"
+                },
+                "superseded_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "target": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "valid_from": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "valid_to": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "source",
+                "target",
+                "type",
+                "confidence",
+                "valid_from",
+                "valid_to",
+                "observed_at",
+                "superseded_by",
+                "metadata"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "additionalProperties": {},
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "record_type": {
+                  "enum": [
+                    "entity",
+                    "memory",
+                    "conclusion"
+                  ],
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "type",
+                "record_type",
+                "metadata"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "anchor_id",
+          "nodes",
+          "edges"
+        ],
+        "type": "object"
+      },
+      "GraphEdge": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "observed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "valid_from": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "target",
+          "type",
+          "confidence",
+          "valid_from",
+          "valid_to",
+          "observed_at",
+          "superseded_by",
+          "metadata"
+        ],
+        "type": "object"
+      },
+      "GraphNode": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "record_type": {
+            "enum": [
+              "entity",
+              "memory",
+              "conclusion"
+            ],
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "type",
+          "record_type",
+          "metadata"
+        ],
+        "type": "object"
+      },
+      "MemoryOperation": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": {},
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
       "MemoryProfile": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -44,6 +423,577 @@
           "role",
           "scopes",
           "workspace_ids"
+        ],
+        "type": "object"
+      },
+      "Session": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "owner_agent_id": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "private",
+              "shared"
+            ],
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "owner_agent_id",
+          "scope",
+          "title",
+          "workspace_id",
+          "metadata",
+          "created_at",
+          "updated_at",
+          "deleted_at"
+        ],
+        "type": "object"
+      },
+      "SessionCreate": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "scope": {
+            "enum": [
+              "private",
+              "shared"
+            ],
+            "type": "string"
+          },
+          "session_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SessionUpdate": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Webhook": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "event_types": {
+            "items": {
+              "enum": [
+                "memory.created",
+                "session.created",
+                "queue.empty",
+                "summary.updated",
+                "peer_card.updated",
+                "conflict.detected",
+                "webhook.test"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "has_secret": {
+            "type": "boolean"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_delivered_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "queued",
+                  "delivered",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "owner_agent_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          },
+          "workspace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "workspace_id",
+          "event_types",
+          "enabled",
+          "headers",
+          "metadata",
+          "id",
+          "owner_agent_id",
+          "has_secret",
+          "last_status",
+          "last_error",
+          "last_delivered_at",
+          "created_at",
+          "updated_at",
+          "deleted_at"
+        ],
+        "type": "object"
+      },
+      "WebhookDeliveries": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "deliveries": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "attempts": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "created_at": {
+                  "type": "string"
+                },
+                "delivered_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "endpoint_id": {
+                  "type": "string"
+                },
+                "error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "event_id": {
+                  "type": "string"
+                },
+                "event_type": {
+                  "enum": [
+                    "memory.created",
+                    "session.created",
+                    "queue.empty",
+                    "summary.updated",
+                    "peer_card.updated",
+                    "conflict.detected",
+                    "webhook.test"
+                  ],
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "nonce": {
+                  "type": "string"
+                },
+                "owner_agent_id": {
+                  "type": "string"
+                },
+                "response_status": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "queued",
+                    "delivered",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                "updated_at": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "workspace_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "endpoint_id",
+                "owner_agent_id",
+                "workspace_id",
+                "event_id",
+                "event_type",
+                "nonce",
+                "status",
+                "attempts",
+                "url",
+                "response_status",
+                "error",
+                "created_at",
+                "updated_at",
+                "delivered_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deliveries",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "type": "object"
+      },
+      "WebhookDelivery": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "delivered_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endpoint_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "event_type": {
+            "enum": [
+              "memory.created",
+              "session.created",
+              "queue.empty",
+              "summary.updated",
+              "peer_card.updated",
+              "conflict.detected",
+              "webhook.test"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": "string"
+          },
+          "owner_agent_id": {
+            "type": "string"
+          },
+          "response_status": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "delivered",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "endpoint_id",
+          "owner_agent_id",
+          "workspace_id",
+          "event_id",
+          "event_type",
+          "nonce",
+          "status",
+          "attempts",
+          "url",
+          "response_status",
+          "error",
+          "created_at",
+          "updated_at",
+          "delivered_at"
+        ],
+        "type": "object"
+      },
+      "WebhookTest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "event_type": {
+            "enum": [
+              "memory.created",
+              "session.created",
+              "queue.empty",
+              "summary.updated",
+              "peer_card.updated",
+              "conflict.detected",
+              "webhook.test"
+            ],
+            "type": "string"
+          },
+          "workspace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "event_type",
+          "data"
+        ],
+        "type": "object"
+      },
+      "WebhookTestResult": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "delivery_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "queued_deliveries": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "event_id",
+          "queued_deliveries",
+          "delivery_ids"
+        ],
+        "type": "object"
+      },
+      "WebhookWrite": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "event_types": {
+            "items": {
+              "enum": [
+                "memory.created",
+                "session.created",
+                "queue.empty",
+                "summary.updated",
+                "peer_card.updated",
+                "conflict.detected",
+                "webhook.test"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "metadata": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "secret": {
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          },
+          "workspace_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "workspace_id",
+          "event_types",
+          "enabled",
+          "headers",
+          "metadata"
         ],
         "type": "object"
       },
@@ -852,6 +1802,87 @@
         "summary": "Prometheus metrics"
       }
     },
+    "/v1/actor-credentials/{operationId}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "operationId",
+          "required": true,
+          "schema": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActorCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActorCredentialResult"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          },
+          "410": {
+            "description": "Receipt acknowledged or expired; reconcile the original outcome"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Durable agent credential operation; explicit admin:agents, workspace authorization and scope subset required; encrypted receipt replay expires after fifteen minutes"
+      }
+    },
+    "/v1/actor-credentials/{operationId}/receipt": {
+      "delete": {
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Acknowledge exact credential receipt; owner and admin:agents required"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "operationId",
+          "required": true,
+          "schema": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          }
+        }
+      ]
+    },
     "/v1/agents": {
       "get": {
         "responses": {
@@ -898,6 +1929,171 @@
         "summary": "Get conclusion (supports include_history)"
       }
     },
+    "/v1/conflicts": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List readable unresolved conflicts"
+      }
+    },
+    "/v1/conflicts/{memoryId}/resolve": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConflictResolve"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Acknowledge or dismiss readable owned-memory conflicts"
+      }
+    },
+    "/v1/consolidation/logs": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read workspace consolidation history"
+      }
+    },
+    "/v1/consolidation/logs/{runId}": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read permitted consolidation result"
+      }
+    },
+    "/v1/consolidation/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read workspace consolidation status"
+      }
+    },
     "/v1/context": {
       "post": {
         "responses": {
@@ -906,6 +2102,118 @@
           }
         },
         "summary": "Build context pack"
+      }
+    },
+    "/v1/graph/entities": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GraphNode"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List readable entities"
+      }
+    },
+    "/v1/graph/entities/{entityId}": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read entity evidence"
+      }
+    },
+    "/v1/graph/neighborhood": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Graph"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read bounded graph neighborhood"
+      }
+    },
+    "/v1/graph/relations": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GraphEdge"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List readable relations"
       }
     },
     "/v1/health": {
@@ -1035,6 +2343,47 @@
         "summary": "Read-only conflict detection requires memories:read; workspace access is enforced"
       }
     },
+    "/v1/memories/consolidate": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsolidationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Enqueue a durable consolidation operation"
+      }
+    },
     "/v1/memories/search": {
       "post": {
         "responses": {
@@ -1104,6 +2453,97 @@
         "summary": "Create queue job"
       }
     },
+    "/v1/queue/jobs/{id}": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Cancel work before execution"
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read permitted job detail"
+      }
+    },
+    "/v1/queue/jobs/{id}/retry": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Retry failed work after inspection"
+      }
+    },
     "/v1/queue/jobs/{id}/run": {
       "post": {
         "responses": {
@@ -1122,6 +2562,506 @@
           }
         },
         "summary": "Get queue operation receipt"
+      }
+    },
+    "/v1/queue/run-next": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Run next pending job"
+      }
+    },
+    "/v1/queue/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read permitted queue status and jobs"
+      }
+    },
+    "/v1/sessions": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Session"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List visible sessions"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create session; IDs remain reserved"
+      }
+    },
+    "/v1/sessions/{sessionId}": {
+      "delete": {
+        "responses": {
+          "204": {
+            "description": "Archived"
+          }
+        },
+        "summary": "Archive owned session"
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get session"
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update owned session"
+      }
+    },
+    "/v1/sessions/{sessionId}/chat": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Source-cited session chat; optional SSE"
+      }
+    },
+    "/v1/sessions/{sessionId}/context": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Build context for a readable session"
+      }
+    },
+    "/v1/sessions/{sessionId}/memories": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "List readable session memories"
+      }
+    },
+    "/v1/webhooks": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Webhook"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List permitted webhook endpoints"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create webhook"
+      }
+    },
+    "/v1/webhooks/{webhookId}": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Disable and archive webhook"
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get permitted webhook"
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update webhook"
+      }
+    },
+    "/v1/webhooks/deliveries": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveries"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List permitted webhook delivery history"
+      }
+    },
+    "/v1/webhooks/deliveries/{deliveryId}": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDelivery"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get permitted webhook delivery"
+      }
+    },
+    "/v1/webhooks/test": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookTest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookTestResult"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Permission or workspace membership required"
+          },
+          "409": {
+            "description": "Archived workspace IDs are reserved"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Queue a workspace-wide test for all enabled owned endpoints"
       }
     },
     "/v1/workspaces": {
