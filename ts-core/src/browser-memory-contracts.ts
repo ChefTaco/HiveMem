@@ -27,6 +27,8 @@ export const MemoryWriteSchema = MemoryUpdateSchema.extend({
   source: MemorySourceSchema.optional(), confidence_reason: nullableText.optional(), supersedes: nullableText.optional(),
 });
 export const MemoryRecordSchema = MemoryWriteSchema.required().omit({ confidence_reason: true }).extend({
+  // Reads preserve historical/native bytes; create constraints must not transform recovery data.
+  content: z.string(),
   id: z.string(), agent_id: z.string(), workspace_id: z.string(),
   source: MemorySourceSchema, confidence: z.number(), importance: z.number(),
   created_at: z.string(), updated_at: z.string(), session_id: nullableText,

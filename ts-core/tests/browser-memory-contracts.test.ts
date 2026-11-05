@@ -50,5 +50,7 @@ test("browser contract boundaries reject malformed data and strip undeclared top
   assert.throws(() => MemorySearchResponseSchema.parse({ results: [memory], total_searched: 1, collections_searched: [] }));
   assert.throws(() => MemoryWriteSchema.parse({ content: " ", type: "semantic", scope: "private" }));
   assert.equal('signing_secret' in MemoryRecordSchema.parse({ ...memory, signing_secret: 'obviously-fake-secret' }), false);
+  for (const content of ["", "  retained native content  "])
+    assert.equal(MemoryRecordSchema.parse({ ...memory, content }).content, content);
   assert.deepEqual(MemoryUpdateSchema.parse({ content: "", tags: [], confidence: 0, metadata: {} }), { content: "", confidence: 0, tags: [], metadata: {} });
 });

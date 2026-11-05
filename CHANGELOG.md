@@ -2,7 +2,8 @@
 
 - Export immutable, attributed browser contracts for memory CRUD/search, native
   offset pagination, queue/worker state, statistics, agents and session results.
-  Verify schemas against actual store outputs without changing native APIs.
+  Preserve native and historical text in read contracts, and verify schemas
+  against actual store outputs without changing native APIs.
 
 - Verify managed webhook delivery with a disposable native API/worker, real
   Qdrant, a scoped identity and a certificate-verified HMAC receiver, including

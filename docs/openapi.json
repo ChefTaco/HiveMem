@@ -493,7 +493,6 @@
                   "type": "array"
                 },
                 "content": {
-                  "minLength": 1,
                   "type": "string"
                 },
                 "corroborated_by": {
@@ -776,7 +775,6 @@
                   "type": "array"
                 },
                 "content": {
-                  "minLength": 1,
                   "type": "string"
                 },
                 "corroborated_by": {
@@ -1642,7 +1640,6 @@
             "type": "array"
           },
           "content": {
-            "minLength": 1,
             "type": "string"
           },
           "corroborated_by": {
@@ -2123,7 +2120,6 @@
                       "type": "array"
                     },
                     "content": {
-                      "minLength": 1,
                       "type": "string"
                     },
                     "corroborated_by": {
@@ -2584,7 +2580,6 @@
                 "type": "array"
               },
               "content": {
-                "minLength": 1,
                 "type": "string"
               },
               "corroborated_by": {
@@ -3720,7 +3715,6 @@
                       "type": "array"
                     },
                     "content": {
-                      "minLength": 1,
                       "type": "string"
                     },
                     "corroborated_by": {
