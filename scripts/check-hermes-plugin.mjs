@@ -40,7 +40,12 @@ try {
   await writeFile(extensions, 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\nsubjectAltName=IP:127.0.0.1\n', { mode: 0o600 });
   await run('openssl', ['x509', '-req', '-in', csr, '-CA', ca, '-CAkey', caKey, '-set_serial', '12345', '-out', certificate, '-days', '1', '-extfile', extensions]);
   const secret = randomBytes(48).toString('base64url'), store = new InMemoryHiveMemStore();
-  server = createServer({ key: await readFile(key), cert: await readFile(certificate) }, createHiveMemHandler({ store, jwtSecret: secret })).listen(0, '127.0.0.1');
+  const handler = createHiveMemHandler({ store, jwtSecret: secret });
+  let prefixedCalls = 0;
+  server = createServer({ key: await readFile(key), cert: await readFile(certificate) }, (request, response) => {
+    if (request.url?.startsWith('/memory/')) { prefixedCalls++; request.url = request.url.slice('/memory'.length); }
+    return handler(request, response);
+  }).listen(0, '127.0.0.1');
   await new Promise(done => server.once('listening', done));
   const origin = 'https://127.0.0.1:' + server.address().port, authority = await readFile(ca);
   const admin = signToken(secret, { sub: 'synthetic-operator', role: 'admin', scope: 'admin:all', exp: Math.floor(Date.now() / 1000) + 600 });
@@ -56,7 +61,7 @@ try {
   const token = enrollment.body.token, claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url'));
   assert.equal(claims.role, 'agent'); assert.deepEqual(claims.workspace_ids, [workspace]); assert(!claims.scope.includes('admin:') && !claims.scope.includes('*'));
   const envFile = join(scratch, 'native.env'), config = 'memory:\n  provider: hivemem\n';
-  const values = { HERMES_HIVEMEM_API_URL: origin, HERMES_HIVEMEM_TOKEN: token, HERMES_HIVEMEM_CA_FILE: ca, HERMES_HIVEMEM_WORKSPACE_ID: workspace };
+  const values = { HERMES_HIVEMEM_API_URL: origin + '/memory', HERMES_HIVEMEM_TOKEN: token, HERMES_HIVEMEM_CA_FILE: ca, HERMES_HIVEMEM_WORKSPACE_ID: workspace };
   await writeFile(envFile, Object.entries(values).map(([name, value]) => name + '=' + value).join('\n') + '\n', { mode: 0o600 });
   await writeFile(join(profile, 'config.yaml'), config, { mode: 0o600 });
   await writeFile(join(profile, 'hivemem.json'), JSON.stringify({ enabled: true, workspace_id: workspace, capture_turns: false, recall_mode: 'tools' }), { mode: 0o600 });
@@ -70,6 +75,7 @@ try {
   assert.equal(JSON.parse(registered).registered, true);
   const result = await run(executable, [...args, 'hivemem', 'test', '--write-check'], { env });
   assert(result.includes('disposable write/search/delete check... OK'));
+  assert(prefixedCalls >= 4, 'The native client must use the explicitly selected ingress prefix');
   const memories = store.snapshot().memories.filter(memory => memory.agent_id === agent);
   assert.equal(memories.length, 1); assert.equal(memories[0].workspace_id, workspace); assert(memories[0].deleted_at);
   assert.equal((await call('/v1/agents/register', { agent_id: 'forbidden', display_name: 'Forbidden' }, token)).status, 403);
@@ -78,7 +84,7 @@ try {
   await assert.rejects(run(executable, [...args, 'hivemem', 'test', '--write-check'], { env: { ...env, HERMES_HIVEMEM_CA_FILE: join(runtime, 'MAGNUS-LICENSE') } }));
   assert.deepEqual(await readFile(envFile), original); assert.equal(await readFile(join(profile, 'config.yaml'), 'utf8'), config);
   console.log(JSON.stringify({ ok: true, nativeVersion: native.version, pluginVersion: plugin.version, pluginSHA256: plugin.sha256,
-    actualNativeCLI: true, nativeProviderRegistration: true, scopedIdentity: true, workspaceIsolation: true, verifiedHTTPS: true, writeSearchDelete: true, invalidCredentialAndTrustRefused: true,
+    actualNativeCLI: true, nativeProviderRegistration: true, explicitIngressPrefix: true, scopedIdentity: true, workspaceIsolation: true, verifiedHTTPS: true, writeSearchDelete: true, invalidCredentialAndTrustRefused: true,
     originalProfileBytesRetained: true, productionCutover: false }));
 } finally {
   if (server) { server.closeAllConnections(); await new Promise(done => server.close(done)); }

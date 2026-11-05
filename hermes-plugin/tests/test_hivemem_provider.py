@@ -66,11 +66,19 @@ def test_normalize_api_url(hivemem_module):
     assert hivemem_module.normalize_api_url("example.test:443/") == "https://example.test:443"
     assert hivemem_module.normalize_api_url("localhost:18790") == "http://localhost:18790"
     assert hivemem_module.normalize_api_url("http://127.0.0.1:18790") == "http://127.0.0.1:18790"
+    assert hivemem_module.normalize_api_url("https://example.test/memory") == "https://example.test/memory"
+    assert hivemem_module.normalize_api_url("https://example.test/suite/memory/") == "https://example.test/suite/memory"
     for unsafe in (
         "http://example.test",
         "http://0.0.0.0:18790",
-        "https://example.test/api/",
+        "https://example.test/memory/../admin",
+        "https://example.test/memory/%2e%2e/admin",
+        "https://example.test/memory//admin",
+        "https://example.test/memory\\admin",
+        "https://example.test/memory\n/admin",
+        "https://example.test/memory#fragment",
         "https://user@example.test",
+        "https://@example.test/memory",
         "https://example.test?token=bad",
     ):
         with pytest.raises(ValueError):

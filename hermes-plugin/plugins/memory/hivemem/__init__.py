@@ -90,7 +90,7 @@ def _floatish(value: Any, default: float, *, minimum: float, maximum: float) -> 
 
 
 def normalize_api_url(value: str | None) -> str:
-    """Return an exact verified origin; plain HTTP is limited to loopback development."""
+    """Return a verified endpoint with an optional canonical ingress prefix."""
     raw = (value or DEFAULT_API_URL).strip()
     if not raw:
         raw = DEFAULT_API_URL
@@ -104,11 +104,15 @@ def normalize_api_url(value: str | None) -> str:
         or not parsed.hostname
         or parsed.username
         or parsed.password
-        or parsed.path not in {"", "/"}
+        or "@" in parsed.netloc
         or parsed.query
         or parsed.fragment
+        or re.search(r"[\x00-\x20\x7f]", raw)
     ):
-        raise ValueError("HiveMem API URL must be an exact HTTP(S) origin without userinfo")
+        raise ValueError("HiveMem API URL requires HTTP(S) without userinfo, queries or fragments")
+    prefix = parsed.path[:-1] if parsed.path.endswith("/") else parsed.path
+    if len(prefix) > 256 or not re.fullmatch(r"(?:/[A-Za-z0-9_-]+)*", prefix):
+        raise ValueError("HiveMem API URL requires a canonical ingress prefix without encoded or relative segments")
     hostname = parsed.hostname.rstrip(".").lower()
     try:
         address = ipaddress.ip_address(hostname)
@@ -129,7 +133,7 @@ def normalize_api_url(value: str | None) -> str:
         raise ValueError("HiveMem API URL contains an invalid port") from exc
     rendered_host = f"[{hostname}]" if ":" in hostname else hostname
     port = f":{parsed_port}" if parsed_port is not None else ""
-    return f"{scheme}://{rendered_host}{port}"
+    return f"{scheme}://{rendered_host}{port}{prefix}"
 
 
 def _hermes_home_from_runtime() -> Path:

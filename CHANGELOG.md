@@ -1,5 +1,8 @@
 # Changelog
 
+- Allow the native Hermes plugin to use an explicit canonical HTTPS ingress
+  prefix while preserving origin-only endpoints and strict redirect/TLS checks.
+
 - Recheck each session memory source against current workspace access after a
   session moves, so later membership revocation removes that source from history.
 

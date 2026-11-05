@@ -34,6 +34,12 @@ HERMES_HIVEMEM_TOKEN=<agent-jwt-from-hivemem>
 # HERMES_HIVEMEM_CA_FILE=/path/to/hermes-home/plugins/hivemem/hivemem-ca.pem
 ```
 
+For a shared HTTPS ingress, the API URL may include its explicit memory prefix,
+for example `https://console.example.com/memory`. Do not append `/v1`; the client
+adds native API paths. Existing origin-only URLs remain supported. Encoded paths,
+relative segments, userinfo, query strings, fragments and redirects are rejected;
+configured certificate verification remains required.
+
 The default destination is `http://localhost:18790`. Bare host names such as `hivemem.example.com` are normalized to `https://hivemem.example.com`; plain HTTP is accepted only for exact loopback development. HTTPS always verifies the peer hostname using the system CA store or the PEM trust anchor in `HERMES_HIVEMEM_CA_FILE`. Credentialed redirects are rejected before a second request is made.
 
 Non-secret provider options live in `$HERMES_HOME/hivemem.json`:
