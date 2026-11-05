@@ -1,5 +1,8 @@
 # Changelog
 
+- Recheck each session memory source against current workspace access after a
+  session moves, so later membership revocation removes that source from history.
+
 - Add product-owned actor credential operations with encrypted, expiring receipts,
   exact owner/policy-bound replay, preserved credential deadlines and generation
   containment. Enrollment requires current workspace authority and explicit scopes.

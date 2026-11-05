@@ -1700,7 +1700,7 @@ export class InMemoryHiveMemStore {
     return [...this.memories.values()]
       .filter((memory) => memory.session_id === sessionId)
       .filter((memory) => this.currentMemory(memory))
-      .filter((memory) => canRead(memory, principal));
+      .filter((memory) => canRead(memory, principal) && this.canReadWorkspace(principal, memory.workspace_id));
   }
 
   listAgentMemories(principal: AuthPrincipal, agentId: string, params: URLSearchParams): MemoryRecord[] {

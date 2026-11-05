@@ -219,3 +219,27 @@ test("conflict review requires current workspace write permission even for the m
     /permission/,
   );
 });
+
+test("moving a session does not retain access to memories in a subsequently revoked workspace", () => {
+  const store = new InMemoryHiveMemStore();
+  store.createWorkspace(owner, {
+    workspace_id: "team",
+    members: [{ agent_id: other.agentId, role: "member" }],
+  });
+  const session = store.createSession(other, { workspace_id: "team" });
+  store.createMemory(other, {
+    workspace_id: "team",
+    session_id: session.session_id,
+    content: "Synthetic retained workspace source",
+    type: "semantic",
+    scope: "private",
+  });
+  store.updateSession(other, session.session_id, { workspace_id: "default" });
+  assert.equal(store.getSessionMemories(other, session.session_id).length, 1);
+  store.removeWorkspaceMember(owner, "team", other.agentId);
+  assert.equal(
+    store.getSession(other, session.session_id).workspace_id,
+    "default",
+  );
+  assert.deepEqual(store.getSessionMemories(other, session.session_id), []);
+});
