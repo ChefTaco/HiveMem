@@ -21,6 +21,7 @@
     "generate:openapi": "node scripts/openapi.mjs --write",
     "check:openapi": "node scripts/openapi.mjs",
     "build:hermes-plugin": "node scripts/build-hermes-plugin.mjs",
-    "test:hermes-native": "node scripts/check-hermes-plugin.mjs"
+    "test:hermes-native": "node scripts/check-hermes-plugin.mjs",
+    "test:webhook-worker": "node scripts/check-webhook-worker.mjs"
   }
 }

@@ -1,5 +1,9 @@
 # Changelog
 
+- Verify managed webhook delivery with a disposable native API/worker, real
+  Qdrant, a scoped identity and a certificate-verified HMAC receiver, including
+  durable history after restart and truthful failed/disabled outcomes.
+
 - Correct the owned memory contract to advertise the existing browse endpoint and
   PUT updates; remove the unsupported collection GET and PATCH declarations.
 

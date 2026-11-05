@@ -101,6 +101,18 @@ See [APP_ARCHITECTURE.md](APP_ARCHITECTURE.md) for internals, request flow, data
 
 Security hardening notes, including webhook destination policy, token handling, and reporting guidance, live in [SECURITY.md](SECURITY.md).
 
+The optional `test:webhook-worker` drill requires Docker, OpenSSL, the locally
+available `qdrant/qdrant:v1.18.1` image and a completed build. Run it with
+`HIVEMEM_WEBHOOK_TEST_CONFIRM=isolated-synthetic-installation npm run test:webhook-worker`.
+It creates its own temporary native CLI profile, scoped API identity, Qdrant
+container and HTTPS receiver. Only that isolated profile allows the exact
+`localhost` receiver and trusts its generated certificate; ordinary SSRF and TLS
+rules remain unchanged. The real background worker emits a test and memory-created
+event, exposes delivery history after a process restart, records a receiver's
+HTTP failure, and stops queuing disabled endpoints. All resources created by the
+drill are removed. Existing profiles, services and webhook endpoints are never
+selected.
+
 ## Contributing
 
 If you'd like to improve HiveMem, start with [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, test commands, and pull request guidance.
