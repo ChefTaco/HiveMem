@@ -1,5 +1,7 @@
 # Changelog
 
+## 1.3.0 - 2026-11-05
+
 - Export immutable, attributed browser contracts for memory CRUD/search, native
   offset pagination, queue/worker state, statistics, agents and session results.
   Preserve native and historical text in read contracts, and verify schemas
@@ -36,7 +38,7 @@
 - Add protected first-start memory identity enrollment with durable completion,
   stable IDs, explicit existing-store refusal and rehearsal containment.
 
-## Unreleased ecosystem extraction
+### Ecosystem extraction
 
 - Export the Hermes memory provider as an allowlisted, attributed plugin artifact
   from an explicit reviewed revision, with archive and runtime checksums.
