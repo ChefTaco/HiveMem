@@ -102,7 +102,85 @@ export function createOathweaveVerifier(
   };
 }
 
+export interface OathweaveServiceOptions {
+  /** Native issuers whose client_credentials tokens may be accepted. */
+  issuers: readonly string[];
+  audience: string;
+}
+export interface OathweaveServiceIdentity {
+  clientId: string;
+  issuer: string;
+  tokenId: string;
+  permissions: string[];
+  expiresAt: number;
+}
+
+/** Oathweave service-account (client_credentials) tokens. They carry no user
+ * session, so they are accepted only when short-lived, bound to this audience
+ * and issued to the client named in their subject. Failure is closed. */
+export function createOathweaveServiceVerifier(
+  options: OathweaveServiceOptions,
+  keys: JWTVerifyGetKey,
+) {
+  if (!options.issuers.length) throw new Error("At least one service issuer is required");
+  return async (token: string): Promise<OathweaveServiceIdentity> => {
+    const { payload } = await jwtVerify(token, keys, {
+      algorithms: ["RS256"],
+      issuer: [...options.issuers],
+      audience: options.audience,
+      requiredClaims: ["sub", "iat", "exp", "jti"],
+      maxTokenAge: "15m",
+    });
+    if (
+      payload.aud !== options.audience ||
+      typeof payload.iss !== "string" ||
+      typeof payload.iat !== "number" ||
+      typeof payload.exp !== "number" ||
+      payload.exp <= payload.iat ||
+      payload.exp - payload.iat > 900 ||
+      typeof payload.jti !== "string" ||
+      !payload.jti
+    )
+      throw new Error("Invalid service token audience or lifetime");
+    if (
+      payload.actorType !== "SERVICE_ACCOUNT" ||
+      payload.token_type !== "access" ||
+      typeof payload.sub !== "string" ||
+      !payload.sub ||
+      payload.clientId !== payload.sub ||
+      payload.sessionId !== undefined ||
+      !Array.isArray(payload.permissions) ||
+      !payload.permissions.every((value) => typeof value === "string")
+    )
+      throw new Error("Invalid service identity");
+    return {
+      clientId: payload.sub,
+      issuer: payload.iss,
+      tokenId: payload.jti,
+      permissions: payload.permissions as string[],
+      expiresAt: payload.exp,
+    };
+  };
+}
+
+function remoteKeys(jwksUrl: string): JWTVerifyGetKey {
+  const url = new URL(jwksUrl);
+  if (url.protocol !== "https:" || url.username || url.password || url.hash)
+    throw new Error("Oathweave endpoints require verified HTTPS");
+  return createRemoteJWKSet(url, {
+    [customFetch]: (target, init) =>
+      fetch(target, { ...init, redirect: "error", signal: AbortSignal.timeout(3000) }),
+  });
+}
+
 let verifier: ReturnType<typeof createOathweaveVerifier> | undefined;
+let serviceVerifier: ReturnType<typeof createOathweaveServiceVerifier> | undefined;
+let sharedKeys: JWTVerifyGetKey | undefined;
+function configuredKeys(): JWTVerifyGetKey {
+  if (!process.env.OATHWEAVE_JWKS_URL) throw new Error("OATHWEAVE_JWKS_URL is required for Oathweave tokens");
+  sharedKeys ??= remoteKeys(process.env.OATHWEAVE_JWKS_URL);
+  return sharedKeys;
+}
 export function configuredOathweaveVerifier() {
   if (
     !process.env.OATHWEAVE_ISSUER &&
@@ -122,7 +200,13 @@ export function configuredOathweaveVerifier() {
       jwksUrl: process.env.OATHWEAVE_JWKS_URL,
       userinfoUrl: process.env.OATHWEAVE_USERINFO_URL,
       audience: "hivemem",
-    });
+    }, { keys: configuredKeys() });
   }
   return verifier;
+}
+/** Service tokens are accepted only for issuers named in an explicit link. */
+export function configuredOathweaveServiceVerifier(issuers: readonly string[]) {
+  if (!issuers.length) return undefined;
+  serviceVerifier ??= createOathweaveServiceVerifier({ issuers: [...new Set(issuers)], audience: "hivemem" }, configuredKeys());
+  return serviceVerifier;
 }

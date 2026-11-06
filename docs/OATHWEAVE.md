@@ -26,6 +26,34 @@ Do not put live links or credentials in Git. Prepare and review links independen
 for each installation before applying configuration. No API request creates a
 replacement identity to impersonate a legacy account.
 
+## Service identities
+
+Another product can call HiveMem with a short-lived Oathweave service-account token,
+obtained with the client credentials grant, instead of a long-lived HiveMem bearer
+token. `HIVEMEM_OATHWEAVE_SERVICES_JSON` is a protected JSON array of explicit
+service links; it needs `OATHWEAVE_JWKS_URL`:
+
+```json
+[{"issuer":"oathweave-example","clientId":"example-service","localId":"example-service","scopes":["memories:read"]}]
+```
+
+`issuer` is the Oathweave native `JWT_ISSUER` that signs client credentials tokens
+(not the browser issuer), and `clientId` is the machine client. A token is accepted
+only when it is signed by the configured JWKS, names exactly one linked issuer and
+client (`sub` and `clientId` agree), has the audience `hivemem`, is an access token
+of the `SERVICE_ACCOUNT` actor type without a user session, and lives at most fifteen
+minutes. Its `hivemem:` permissions become HiveMem scopes, limited to the link's
+`scopes`: Oathweave can narrow, never widen, what the service may do. A token with no
+linked scope is refused.
+
+The request runs as `localId`. It needs no registered agent, but disabling an agent
+with that ID contains the service at once. A service principal cannot exchange its
+token for a HiveMem token at `/v1/auth/refresh`; it renews through Oathweave. Each
+service fetches a new token before the previous one expires, so no renewal job or
+manual rotation exists for this credential. Revoke it in Oathweave by deactivating
+the client or changing its secret; tokens already issued expire within their
+lifetime.
+
 The integration is under development. A passing unit suite does not authorize
 production adoption. Restore rehearsal, permissions, native clients, and browser
 workflow parity must pass before switching an existing installation.

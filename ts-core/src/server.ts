@@ -1,10 +1,10 @@
-import { parseAccountLinks, linkedAccount, type AccountLink } from './account-links.js';
+import { parseAccountLinks, linkedAccount, parseServiceLinks, linkedService, type AccountLink, type ServiceLink } from './account-links.js';
 import { maintenanceActive } from './release/runtime.js';
 import { metadata, findPackageRoot } from './release/runtime.js';
 const releaseMetadata = () => metadata(findPackageRoot(import.meta.url, '@hivemagnus/hivemem-server'));
 import type { JsonValue } from "./types.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { configuredOathweaveVerifier, type OathweaveIdentity } from "./oathweave.js";
+import { configuredOathweaveServiceVerifier, configuredOathweaveVerifier, type OathweaveIdentity, type OathweaveServiceIdentity } from "./oathweave.js";
 import { timingSafeEqual } from "node:crypto";
 import { AuthError, isUsableSigningSecret, MAX_TOKEN_LINEAGE, parentTokenIds, signToken, verifyBearerToken } from "./auth.js";
 import { DEFAULT_AGENT_SCOPES } from "./issue-token.js";
@@ -26,6 +26,19 @@ export interface HiveMemServerOptions {
   metricsAllowLoopback?: boolean;
   oathweaveAccountLinks?: readonly AccountLink[];
   verifyOathweave?: (token:string)=>Promise<OathweaveIdentity>;
+  /** Oathweave client_credentials identities of other products (HIVEMEM_OATHWEAVE_SERVICES_JSON). */
+  oathweaveServiceLinks?: readonly ServiceLink[];
+  verifyOathweaveService?: (token:string)=>Promise<OathweaveServiceIdentity>;
+}
+
+/** Marks principals authenticated by an Oathweave service token. */
+const OATHWEAVE_SERVICE_CREDENTIAL = "oathweave-service";
+
+function unverifiedJwtPart(token: string, index: number): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(Buffer.from(token.split(".")[index] ?? "", "base64url").toString());
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  } catch { return {}; }
 }
 
 class PayloadTooLargeError extends Error {
@@ -389,6 +402,8 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
   }
   const verifyIdentity = options.verifyOathweave ?? configuredOathweaveVerifier();
   const accountLinks=options.oathweaveAccountLinks ?? parseAccountLinks(process.env.HIVEMEM_OATHWEAVE_IDENTITIES_JSON??'[]');
+  const serviceLinks=options.oathweaveServiceLinks ?? parseServiceLinks(process.env.HIVEMEM_OATHWEAVE_SERVICES_JSON??'[]');
+  const verifyService = options.verifyOathweaveService ?? configuredOathweaveServiceVerifier(serviceLinks.map(link=>link.issuer));
   const maxBodyBytes = options.maxBodyBytes ?? Number.parseInt(process.env.HIVEMEM_MAX_BODY_BYTES ?? "1048576", 10);
   if (!Number.isInteger(maxBodyBytes) || maxBodyBytes < 1024) throw new Error("HIVEMEM_MAX_BODY_BYTES must be an integer of at least 1024");
   const store = options.store ?? new InMemoryHiveMemStore();
@@ -407,12 +422,28 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       const method = request.method ?? "GET";
 
       const header = request.headers.authorization;
-      if (verifyIdentity && typeof header === 'string' && header.startsWith('Bearer ') && !url.pathname.startsWith('/v1/health')) {
-        let algorithm: unknown;
-        try { algorithm=JSON.parse(Buffer.from(header.slice(7).split('.')[0] ?? '', 'base64url').toString()).alg; } catch { /* Legacy parser returns the final error. */ }
-        if (algorithm === 'RS256') {
+      if ((verifyIdentity || verifyService) && typeof header === 'string' && header.startsWith('Bearer ') && !url.pathname.startsWith('/v1/health')) {
+        const supplied = header.slice(7);
+        // Routing only: the selected verifier checks the signature and every claim.
+        const algorithm = unverifiedJwtPart(supplied, 0).alg;
+        if (algorithm === 'RS256' && unverifiedJwtPart(supplied, 1).actorType === 'SERVICE_ACCOUNT') {
+          if (!verifyService) throw new AuthError(401, 'Service identities are not accepted here');
+          let identity: OathweaveServiceIdentity;
+          try { identity = await verifyService(supplied); } catch { throw new AuthError(401, 'Invalid service identity token'); }
+          if (isRevoked(identity.tokenId)) throw new AuthError(401, 'JWT has been revoked');
+          let link: ServiceLink;
+          try { link = linkedService(serviceLinks, identity); } catch { throw new AuthError(403, 'An explicit service link is required'); }
+          // The link is the ceiling: Oathweave can narrow, never widen, what the service may do here.
+          const scopes = identity.permissions.filter(value => value.startsWith('hivemem:')).map(value => value.slice('hivemem:'.length)).filter(value => link.scopes.includes(value));
+          if (!scopes.length) throw new AuthError(403, 'The service identity holds no linked memory scope');
+          const principal: AuthPrincipal = { agentId: link.localId, scopes, rawClaims: { sub: link.localId, role: 'service', scope: scopes.join(' '), iss: identity.issuer, client_id: identity.clientId, jti: identity.tokenId, exp: identity.expiresAt, credential: OATHWEAVE_SERVICE_CREDENTIAL, token_generation: store.credentialGeneration(link.localId) } };
+          // Disabling the local principal contains the service without touching Oathweave.
+          store.assertCredentialActive(principal);
+          resourcePrincipals.set(request, principal);
+        } else if (algorithm === 'RS256') {
+          if (!verifyIdentity) throw new AuthError(401, 'Invalid or revoked identity session');
           let identity: OathweaveIdentity;
-          try { identity=await verifyIdentity(header.slice(7)); } catch { throw new AuthError(401,'Invalid or revoked identity session'); }
+          try { identity=await verifyIdentity(supplied); } catch { throw new AuthError(401,'Invalid or revoked identity session'); }
           let link: AccountLink;
           try {link=linkedAccount(accountLinks,identity);} catch {throw new AuthError(403,'An explicit memory account link is required');}
           const agentId = link.localId;
@@ -797,6 +828,8 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
         return;
       }
       if (method === "POST" && url.pathname === "/v1/auth/refresh") {
+        // A service identity renews through Oathweave; it never becomes a HiveMem bearer token.
+        if (principal.rawClaims.credential === OATHWEAVE_SERVICE_CREDENTIAL) throw new AuthError(403, "Service identities renew through Oathweave");
         const now = Math.floor(Date.now() / 1000);
         const parentExp = typeof principal.rawClaims.exp === "number" ? principal.rawClaims.exp : now;
         const exp = Math.min(parentExp, now + 3600);

@@ -37,3 +37,39 @@ export function linkedAccount(
     throw new Error("An explicit product account link is required");
   return matches[0]!;
 }
+
+/**
+ * An Oathweave service identity (a client_credentials token) one product uses
+ * to call HiveMem. Each link names the exact issuer and client, the local
+ * principal it acts as, and the HiveMem scopes it may ever receive.
+ */
+const serviceLink = z
+  .object({
+    issuer: z.string().min(1).max(512),
+    clientId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),
+    localId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
+    scopes: z.array(z.string().regex(/^[a-z0-9*-]+(?::[a-z0-9*-]+)*$/)).min(1).max(100),
+  })
+  .strict();
+export type ServiceLink = z.infer<typeof serviceLink>;
+export function parseServiceLinks(raw: string): ServiceLink[] {
+  const links = z.array(serviceLink).max(100).parse(JSON.parse(raw));
+  const seen = new Set<string>();
+  for (const item of links) {
+    const key = JSON.stringify([item.issuer, item.clientId]);
+    if (seen.has(key)) throw new Error("Duplicate issuer/client service link");
+    seen.add(key);
+  }
+  return links;
+}
+export function linkedService(
+  links: readonly ServiceLink[],
+  identity: { issuer: string; clientId: string },
+): ServiceLink {
+  const matches = links.filter(
+    (link) => link.issuer === identity.issuer && link.clientId === identity.clientId,
+  );
+  if (matches.length !== 1)
+    throw new Error("An explicit service link is required");
+  return matches[0]!;
+}
