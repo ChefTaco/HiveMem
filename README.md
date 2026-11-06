@@ -65,7 +65,6 @@ umask 077
 cat > hivemem.env <<EOF
 HIVEMEM_JWT_SECRET=$(openssl rand -hex 32)
 HIVEMEM_QDRANT_URL=http://hivemem-qdrant:6333
-HIVEMEM_TS_CORE_HOST=0.0.0.0
 HIVE_AUTO_MIGRATE=true
 HIVE_HEALTH_URL=http://localhost:18790/v1/health/ready
 EOF
@@ -74,19 +73,20 @@ docker network create hivemem
 docker run -d --name hivemem-qdrant --network hivemem -v hivemem-qdrant:/qdrant/storage \
   qdrant/qdrant:v1.18.1
 
-docker run --rm --network hivemem --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.3.1 check
+docker run --rm --network hivemem --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.3.2 check
 docker run -d --name hivemem --network hivemem -p 127.0.0.1:18790:18790 \
-  -v hivemem-data:/data --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.3.1
+  -v hivemem-data:/data --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.3.2
 
 # Once it reports healthy
 curl http://127.0.0.1:18790/v1/health/ready
-docker run --rm --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.3.1 \
+docker run --rm --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.3.2 \
   issue-token --subject operator --role admin
 ```
 
 The image's entry point is the server CLI, so its commands (`check`, `migrate`,
-`issue-token`, `env-schema`) follow the image name. `HIVEMEM_TS_CORE_HOST=0.0.0.0` is needed
-because the server otherwise listens on `127.0.0.1` inside the container. This serves plain
+`issue-token`, `env-schema`) follow the image name. The image sets `HIVEMEM_TS_CORE_HOST=0.0.0.0`,
+so the server listens on every interface inside the container; publish the port on loopback or
+a private address, as above, and set `HIVEMEM_TS_CORE_HOST` to override it. This serves plain
 HTTP; for anything beyond loopback, mount a certificate and key under `/config`, set
 `HIVEMEM_TLS_CERT_FILE` and `HIVEMEM_TLS_KEY_FILE`, and drop the `HIVE_HEALTH_URL` override
 so the health check uses its HTTPS default. `HIVE_AUTO_MIGRATE=true` lets the first start

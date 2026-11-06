@@ -12,6 +12,13 @@
   Another product can then call HiveMem with credentials it renews itself instead of a
   long-lived admin token.
 
+### Fixed
+
+- The container image now sets `HIVEMEM_TS_CORE_HOST=0.0.0.0`, the variable the server reads,
+  instead of the unused `HIVEMEM_HOST`. A standalone container listened on `127.0.0.1` only, so a
+  published port did not answer unless `HIVEMEM_TS_CORE_HOST` was passed. An explicit
+  `HIVEMEM_TS_CORE_HOST` still wins; the suite already sets it.
+
 ### Security
 
 - A service principal cannot exchange its token for a HiveMem bearer token at
