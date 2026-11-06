@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.2 - 2026-11-06
+
+### Added
+
+- Linked Oathweave service identities. `HIVEMEM_OATHWEAVE_SERVICES_JSON` links an
+  Oathweave machine client (issuer and client ID) to a local principal with a scope
+  ceiling. HiveMem accepts that client's client credentials tokens when they are signed
+  by the configured JWKS, carry the `hivemem` audience, have no user session and live at
+  most fifteen minutes. Their `hivemem:` permissions become scopes, limited by the link.
+  Another product can then call HiveMem with credentials it renews itself instead of a
+  long-lived admin token.
+
+### Security
+
+- A service principal cannot exchange its token for a HiveMem bearer token at
+  `/v1/auth/refresh`, unlinked clients and issuers are refused, and disabling the linked
+  local agent contains the service at once.
+
 ## 1.3.1 - 2026-11-05
 
 ### Security
