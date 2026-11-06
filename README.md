@@ -26,7 +26,7 @@ The production runtime is the strict TypeScript core in [`ts-core/`](ts-core), b
 
 ## Features
 
-- **Server-side embedding.** Clients send plain text. The API embeds with `nomic-embed-text-v1.5` (768-dim cosine); explicit vectors remain accepted for backward compatibility.
+- **No model required.** Clients send plain text. By default HiveMem retrieves with deterministic lexical search over a token-hash embedding (`hivemem-token-hash-v1`, 768 dimensions); an optional OpenAI-compatible embeddings endpoint adds a semantic shadow index.
 - **Per-agent scoping and scoped tokens.** `shared_*` collections are visible only within an authorized workspace; `{agent_id}_private_*` collections are visible only to their owner, while admin tokens can inspect the full console view. Agent identity is derived from the JWT `sub` claim. The TypeScript core supports bounded scoped tokens and persistent `jti` revocation.
 - **Workspaces, sessions, and episodes.** Lightweight `workspace_id` and `session_id` filters group memories; optional episodes/messages preserve raw chronology and can asynchronously produce ordinary memories. Workspace records carry policies, members, and effective settings cascades while preserving the indexed Option A storage model.
 - **Semantic, text, and hybrid search.** Vector, full-text, and hybrid endpoints share a structured filter DSL with logical operators, `metadata.*` paths, valid-time `as_of` filtering, explainability, and optional MMR diversity controls.
@@ -37,16 +37,61 @@ The production runtime is the strict TypeScript core in [`ts-core/`](ts-core), b
 - **Operator and agent surfaces.** Python/TypeScript SDKs, REST helper scripts, the Hermes Agent memory-provider plugin, and the memory pages of the [HiveXUI](https://github.com/ChefTaco/HiveXUI) console all use the REST API.
 - **Compatibility tests.** The TypeScript core uses deterministic node:test coverage for REST compatibility, Qdrant hydration, reasoning, dashboard compatibility routes, and the Hermes plugin contract.
 
-## Install from npm
+## Install
 
-The server is published as [`@hivemagnus/hivemem-server`](ts-core/README.md):
+HiveMem 1.3 ships only as a container image, `ghcr.io/cheftaco/hivemem`, for `linux/amd64`
+and `linux/arm64`. Each release is tagged with its exact version (for example `1.3.1`; there
+is no `latest` tag), and its [GitHub release](https://github.com/ChefTaco/HiveMem/releases)
+records the image digest.
+
+**With the Hive suite.** HiveMem is normally installed by `hive.sh`, the
+[Hive suite controller](https://github.com/ChefTaco/hive#install-the-suite), in both the
+`core` and `full` profiles. The controller pins the image by digest from a signed release
+manifest, writes its configuration and secrets, and runs its private Qdrant. Hive 2.0.1 pins
+HiveMem 1.3.1.
+
+**Legacy npm packages.** HiveMem 1.3 is not published on npm. The npm package
+`@hivemagnus/hivemem-server` (the name the server source still uses) and the image
+`ghcr.io/cheftaco/hivemem-server` are the legacy 1.x line from the Hive repository:
+`npm install` and `npx` resolve that package to 1.2.2, not to this release. The
+[Hive README](https://github.com/ChefTaco/hive#legacy-npm-packages-1x) describes that line.
+The TypeScript client, [`@hivemagnus/hivemem-sdk`](sdks/typescript), is published on npm.
+
+**On its own.** Run the image with a Qdrant it can reach. This example keeps Qdrant on a
+private Docker network and publishes HiveMem on loopback only:
 
 ```bash
-npx @hivemagnus/hivemem-server check --env-file hivemem.env
-npx @hivemagnus/hivemem-server --env-file hivemem.env
+umask 077
+cat > hivemem.env <<EOF
+HIVEMEM_JWT_SECRET=$(openssl rand -hex 32)
+HIVEMEM_QDRANT_URL=http://hivemem-qdrant:6333
+HIVEMEM_TS_CORE_HOST=0.0.0.0
+HIVE_AUTO_MIGRATE=true
+HIVE_HEALTH_URL=http://localhost:18790/v1/health/ready
+EOF
+
+docker network create hivemem
+docker run -d --name hivemem-qdrant --network hivemem -v hivemem-qdrant:/qdrant/storage \
+  qdrant/qdrant:v1.18.1
+
+docker run --rm --network hivemem --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.3.1 check
+docker run -d --name hivemem --network hivemem -p 127.0.0.1:18790:18790 \
+  -v hivemem-data:/data --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.3.1
+
+# Once it reports healthy
+curl http://127.0.0.1:18790/v1/health/ready
+docker run --rm --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.3.1 \
+  issue-token --subject operator --role admin
 ```
 
-See [ts-core/README.md](ts-core/README.md) for requirements, the Qdrant one-liner, and configuration.
+The image's entry point is the server CLI, so its commands (`check`, `migrate`,
+`issue-token`, `env-schema`) follow the image name. `HIVEMEM_TS_CORE_HOST=0.0.0.0` is needed
+because the server otherwise listens on `127.0.0.1` inside the container. This serves plain
+HTTP; for anything beyond loopback, mount a certificate and key under `/config`, set
+`HIVEMEM_TLS_CERT_FILE` and `HIVEMEM_TLS_KEY_FILE`, and drop the `HIVE_HEALTH_URL` override
+so the health check uses its HTTPS default. `HIVE_AUTO_MIGRATE=true` lets the first start
+initialize storage; later migrations need a verified backup. See
+[ts-core/README.md](ts-core/README.md) for configuration and token issuance.
 
 ## Quick Start (development)
 
@@ -79,9 +124,9 @@ The default development URL is `http://localhost:18790`. Production deployments 
 ```text
 Agent clients (SDKs, Hermes provider, custom integrations)
   └─ Plain text over HTTPS to HiveMem API ($HIVEMEM_API_URL)
-       └─ Server-side nomic-embed-text-v1.5 embeddings
+       └─ Deterministic token-hash retrieval, optional semantic shadow index
        └─ Qdrant :6333/:6334 (bound to localhost by default)
-       └─ Local storage under $HIVEMEM_STORAGE_PATH (/var/opt/hivemem in the systemd unit and Docker image; ~/.hive/memory for the npm CLI)
+       └─ Local state under $HIVEMEM_STORAGE_PATH (/data/memory in the container image, /var/opt/hivemem in the systemd unit, otherwise ~/.hive/memory)
 ```
 
 See [APP_ARCHITECTURE.md](APP_ARCHITECTURE.md) for internals, request flow, data model, and operational behavior, and [HIVEMEM_API.md](HIVEMEM_API.md) for the REST contract.
@@ -191,7 +236,6 @@ the selected deployment. When the service certificate uses a DNS name, set
 `HIVE_HEALTH_TLS_NAME` to that name and `NODE_EXTRA_CA_CERTS` to the approved CA
 bundle when needed. Probes retain certificate verification. Runtime state belongs
 in `/data`; mount only product-owned protected configuration in `/config`.
-Images are local candidates until registry publication and release acceptance.
 
 ## Fresh suite initialization
 

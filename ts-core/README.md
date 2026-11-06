@@ -1,4 +1,4 @@
-# @hivemagnus/hivemem-server
+# HiveMem server (`ts-core`)
 
 HiveMem is a self-hosted shared memory server for AI agents. Agents store and recall episodic,
 semantic, and procedural memories over a REST API, with workspace and per-agent isolation, HS256
@@ -6,24 +6,33 @@ JWT auth, lexical and optional semantic search, citation-backed chat and context
 reasoning queue and webhooks. HiveXUI is its browser console. Data lives in
 [Qdrant](https://qdrant.tech).
 
-This package is the server. Clients use the REST API directly or the
+This directory is the server. Clients use the REST API directly or the
 [`@hivemagnus/hivemem-sdk`](https://www.npmjs.com/package/@hivemagnus/hivemem-sdk) TypeScript SDK.
 
-> **Running the whole Hive stack?** The `@hivemagnus/hive` launcher installs, configures, and runs
-> HiveMem together with the Hive Router and IAM, including generated secrets. Use this package
-> directly when you only want the memory server.
+> **How it is released.** HiveMem 1.3 ships only as the container image
+> `ghcr.io/cheftaco/hivemem`, normally installed with the rest of the suite by `hive.sh`, the
+> [Hive suite controller](https://github.com/ChefTaco/hive#install-the-suite). It is not
+> published on npm: `npm install` and `npx` for `@hivemagnus/hivemem-server`, this package's
+> name, resolve to 1.2.2, the legacy line from the Hive repository. The
+> [repository README](../README.md#install) has a `docker run` example for running the image
+> on its own.
 
 ## Requirements
+
+For the container image: Docker, and a Qdrant instance the container can reach.
+
+For a source build:
 
 - Node.js 24 (24.22.1 or later) or Node.js 26 (26.13.0 or later)
 - Linux or macOS with the `flock` command (part of util-linux on Linux; on macOS install a `flock`
   package, for example with Homebrew). HiveMem uses it to guarantee a single writer per data
-  directory.
+  directory. The image includes it.
 - A Qdrant instance, by default at `http://127.0.0.1:6333`
-- Optional: an OpenAI-compatible `/v1/embeddings` endpoint for a semantic search index. Without
-  one, HiveMem uses deterministic lexical retrieval.
 
-## Quick start
+Optional either way: an OpenAI-compatible `/v1/embeddings` endpoint for a semantic search index.
+Without one, HiveMem uses deterministic lexical retrieval.
+
+## Quick start from source
 
 Start Qdrant (bound to localhost):
 
@@ -37,21 +46,25 @@ Create an env file with a JWT signing secret and keep it private:
 ```bash
 umask 077
 printf 'HIVEMEM_JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > hivemem.env
+echo 'HIVE_AUTO_MIGRATE=true' >> hivemem.env
 ```
 
-Check the configuration, then start the server:
+Build, check the configuration, then start the server:
 
 ```bash
-npx @hivemagnus/hivemem-server check --env-file hivemem.env
-npx @hivemagnus/hivemem-server --env-file hivemem.env
+npm ci
+npm run build
+node dist/src/cli.js check --env-file hivemem.env
+node dist/src/cli.js --env-file hivemem.env
 curl http://127.0.0.1:18790/v1/health/ready
 ```
 
-To install it globally instead, run `npm install -g @hivemagnus/hivemem-server` and use the
-`hivemem-server` command.
+The commands below are written as `hivemem-server`, the package's command name. From a source
+build, run `node dist/src/cli.js`; with the container image, pass the command after the image
+name.
 
 Agents authenticate with HS256 JWTs signed by `HIVEMEM_JWT_SECRET`. See the
-[API reference](https://github.com/ChefTaco/hive/blob/main/services/hive-mem/HIVEMEM_API.md) for
+[API reference](../HIVEMEM_API.md) for
 token issuance, registration, and every endpoint.
 
 ## Commands
@@ -60,7 +73,7 @@ token issuance, registration, and every endpoint.
 | --- | --- |
 | `hivemem-server` or `hivemem-server start` | Start the server |
 | `hivemem-server check` | Validate the configuration and check that Qdrant is reachable. Prints a report and exits 0 when the server can start, 1 otherwise. It does not start the server or write data. |
-| `hivemem-server env-schema` | Print every supported environment variable as JSON (name, default, whether it is required or secret, and a description). Tools such as the Hive launcher use it to generate env files. |
+| `hivemem-server env-schema` | Print every supported environment variable as JSON (name, default, whether it is required or secret, and a description). |
 | `hivemem-server issue-token --subject <id>` | Sign an access token with `HIVEMEM_JWT_SECRET` and print only the token. See [Issuing tokens](#issuing-tokens). |
 | `hivemem-server --help` / `--version` | Show usage or the version |
 
@@ -74,11 +87,11 @@ the environment.
 token, or a server-side credential for another service, without calling the API:
 
 ```bash
-# Admin token for the Hive Router's memory proxy (HIVE_ROUTER_MEMORY_PROXY_TOKEN)
-npx @hivemagnus/hivemem-server issue-token --env-file hivemem.env --subject hive-router --role admin
+# Admin token for Emberpath's memory proxy (HIVE_ROUTER_MEMORY_PROXY_TOKEN)
+hivemem-server issue-token --env-file hivemem.env --subject hive-router --role admin
 
 # Agent token with two scopes, valid for 12 hours
-npx @hivemagnus/hivemem-server issue-token --env-file hivemem.env --subject agent-1 \
+hivemem-server issue-token --env-file hivemem.env --subject agent-1 \
   --scope memories:read --scope memories:write --ttl 12h
 ```
 
@@ -116,7 +129,7 @@ All configuration comes from environment variables. Only `HIVEMEM_JWT_SECRET` is
 | `HIVEMEM_EMBEDDING_ENDPOINT` | unset | Optional OpenAI-compatible embeddings URL (HTTPS, or HTTP on loopback). Also set `HIVEMEM_EMBEDDING_MODEL`, `HIVEMEM_EMBEDDING_REVISION`, `HIVEMEM_EMBEDDING_DIMENSIONS`, `HIVEMEM_SEMANTIC_COLLECTION` (must start with `hivemem_shadow_`), and `HIVEMEM_EMBEDDING_API_KEY` if the endpoint needs a key. |
 
 Run `hivemem-server env-schema` for the machine-readable list. The
-[API reference](https://github.com/ChefTaco/hive/blob/main/services/hive-mem/HIVEMEM_API.md)
+[API reference](../HIVEMEM_API.md)
 documents the remaining tuning variables.
 
 ### No silent data loss
@@ -125,7 +138,7 @@ HiveMem refuses to start when Qdrant is unreachable instead of quietly falling b
 For tests and demos, opt in to a volatile server explicitly:
 
 ```bash
-HIVEMEM_TS_PERSISTENCE=memory npx @hivemagnus/hivemem-server --env-file hivemem.env
+HIVEMEM_TS_PERSISTENCE=memory hivemem-server --env-file hivemem.env
 ```
 
 ### HTTPS
@@ -157,16 +170,16 @@ import { createHiveMemServer, InMemoryHiveMemStore, signToken } from "@hivemagnu
 
 ## Links
 
-- [REST API reference](https://github.com/ChefTaco/hive/blob/main/services/hive-mem/HIVEMEM_API.md)
-- [Architecture](https://github.com/ChefTaco/hive/blob/main/services/hive-mem/APP_ARCHITECTURE.md)
-- [Source and issues](https://github.com/ChefTaco/hive)
+- [REST API reference](../HIVEMEM_API.md)
+- [Architecture](../APP_ARCHITECTURE.md)
+- [Source and issues](https://github.com/ChefTaco/HiveMem)
 
 ## Development
 
 From a clone of the repository:
 
 ```bash
-cd services/hive-mem/ts-core
+cd ts-core
 npm ci
 npm run typecheck
 npm test        # builds, then runs the node:test suite

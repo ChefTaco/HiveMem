@@ -1,111 +1,167 @@
 # HiveMem Architecture
 
-HiveMem is the shared long-term memory service for Hive, Hermes, SDK clients, and agent tooling. The production runtime is the strict TypeScript core in [`ts-core/`](ts-core), deployed as `hivemem.service` under `/opt/hivemem`. The old Python/FastAPI implementation has been removed from this repo.
+HiveMem is the shared long-term memory service for agents, SDK clients, the Hermes Agent
+plugin and the HiveXUI console. It is one strict TypeScript process in [`ts-core/`](ts-core)
+(Node.js 24 or 26) that keeps its data in Qdrant. The former Python/FastAPI service has been
+removed; Python remains only in the SDK and the Hermes plugin.
 
-## Runtime Shape
+Releases ship as the container image `ghcr.io/cheftaco/hivemem`, normally installed and
+wired up by the Hive suite controller, `hive.sh`. HiveMem has no dashboard of its own: in the
+suite, HiveXUI is its browser console and calls the same REST API as every other client.
 
-| Component | Current implementation | Notes |
+## Runtime shape
+
+| Component | Implementation | Notes |
 | --- | --- | --- |
-| API server | Node 24 TypeScript core | `ts-core/src/server.ts` exposes REST, dashboard compatibility, and health endpoints. |
-| Persistence | Qdrant snapshot adapter | The CLI (`hivemem-server`) defaults to `HIVEMEM_TS_PERSISTENCE=qdrant` and refuses to start when Qdrant is unreachable. `HIVEMEM_TS_PERSISTENCE=memory` is an explicit volatile opt-in for tests and demos. |
-| Memory store | TypeScript `HiveMemStore` | Hydrates Qdrant collections, normalizes legacy payloads, and flushes snapshots back to Qdrant. |
-| Reasoning | Deterministic TypeScript local heuristics | Summaries, consolidation, dreams, peer cards, conflict scans, and message extraction run without external LLM calls. |
-| Auth | HS256 JWT with role/scopes | `HIVEMEM_JWT_SECRET` signs agent/admin tokens. `HIVEMEM_ADMIN_TOKEN` is a deploy/tooling convention, not a separate server credential. |
-| Dashboard | Compatibility routes in the TS server | The standalone HiveMem dashboard remains reachable, while Hive Router provides the first-party unified Memory page. |
-| Hermes plugin | Python REST client | Kept Python because Hermes Agent is Python; it talks to HiveMem over REST only. |
+| HTTP server | `ts-core/src/server.ts`, `ts-core/src/cli.ts` | One `node:http` or `node:https` listener (`HIVEMEM_WEB_PORT`, default `18790`) serving the REST API, health, `/metrics`, `/v1/capabilities` and the dashboard compatibility routes. HTTPS when `HIVEMEM_TLS_CERT_FILE` and `HIVEMEM_TLS_KEY_FILE` are both set. |
+| Domain store | `ts-core/src/store.ts` | In-memory `HiveMemStore` holding memories, sessions, episodes, workspaces, agents, queue jobs, conclusions and webhooks, with the workspace and ownership checks. |
+| Persistence | `ts-core/src/persistence.ts` | Qdrant snapshot adapter: hydrates the store on start and flushes changes back. `HIVEMEM_TS_PERSISTENCE=qdrant` is the default, and startup fails when Qdrant is unreachable. `memory` is an explicit volatile mode for tests and demos. |
+| Retrieval | `persistence.ts`, `ts-core/src/semantic-index.ts` | Default retrieval is deterministic lexical search over a token-hash embedding (`hivemem-token-hash-v1`, 768 dimensions); no model is loaded. An optional OpenAI-compatible `/v1/embeddings` endpoint (`HIVEMEM_EMBEDDING_*`) maintains a semantic shadow collection (`hivemem_shadow_*`), rebuilt with `ts-core/src/reindex.ts`. |
+| Reasoning and queue | `ts-core/src/reasoning.ts`, `ts-core/src/worker-startup.ts` | Summaries, consolidation, dreams, peer cards, conflict scans and message extraction are deterministic local heuristics with no external LLM call. Writes enqueue jobs in a Qdrant-backed queue run by the managed background worker. |
+| Webhooks | `ts-core/src/webhook-transport.ts` | HMAC-signed deliveries to HTTPS destinations, with delivery history. |
+| Native auth | `ts-core/src/auth.ts`, `ts-core/src/revocation-store.ts` | HS256 JWTs signed with `HIVEMEM_JWT_SECRET`, carrying role and scopes, with persistent `jti` revocation. `issue-token` mints tokens locally. Optional renewal grants use a separate `HIVEMEM_RENEWAL_SECRET`. |
+| Suite auth | `ts-core/src/oathweave.ts`, `ts-core/src/account-links.ts` | Optional RS256 Oathweave tokens for HiveXUI, verified against `OATHWEAVE_ISSUER`, `OATHWEAVE_JWKS_URL` and `OATHWEAVE_USERINFO_URL` and mapped to existing agents only through explicit `HIVEMEM_OATHWEAVE_IDENTITIES_JSON` links. See [docs/OATHWEAVE.md](docs/OATHWEAVE.md). |
+| Credential coordination | `ts-core/src/actor-credentials.ts`, `ts-core/src/initial-account.ts` | Idempotent enroll, rotate and disable operations with encrypted recovery receipts, and the protected first-start account file (`HIVEMEM_INITIAL_ACCOUNT_FILE`) used by fresh suite installations. See [docs/CONSOLE_API.md](docs/CONSOLE_API.md). |
+| Local state | `ts-core/src/writer-lock.ts`, `ts-core/src/durable-file.ts` | Under `HIVEMEM_STORAGE_PATH` (default `${HIVE_HOME:-~/.hive}/memory`): a `flock` writer lock that allows one writer per data directory, the write-recovery journal and the revocation list. |
+| Migrations | `ts-core/src/upgrade.ts`, `ts-core/src/migrations/` | `migrate --plan` is read-only; `migrate` backs up and applies the persisted-format migration. Startup refuses pending migrations unless `HIVE_AUTO_MIGRATE=true`. |
+| Hermes plugin | `hermes-plugin/` | Python Hermes Agent memory provider. It talks to HiveMem over REST only. |
+| SDKs | `sdks/python`, `sdks/typescript` | REST clients. |
 
-Full Hive deployments run HiveMem on internal HTTPS port `18443`. Hive Router serves the public UI on `443` and proxies `/v1/*`, `/dashboard`, and `/dashboard/*` to the internal HiveMem listener.
+## Container image
 
-Local state (writer lock, write-recovery journal, revocation list) lives under `HIVEMEM_STORAGE_PATH`. The systemd unit and Docker image set it to `/var/opt/hivemem`; without it, the CLI uses `${HIVE_HOME:-~/.hive}/memory`.
+The [`Dockerfile`](Dockerfile) builds `ts-core` from this source and produces a
+`linux/amd64` and `linux/arm64` image that runs `node dist/src/cli.js` as the unprivileged
+`node` user. Its defaults:
 
-The Qdrant adapter writes memories to the active memory collections such as `shared_semantic` and `<agent>_private_semantic`, stores metadata records in underscore collections, and keeps episode headers and messages together in `_episodes` using `record_type`. On load, it normalizes legacy memory payloads that predate `id` and `workspace_id`, giving them stable synthetic ids instead of collapsing them during hydration.
+- `HIVE_HOME=/data`, so local state lives in `/data/memory` on the `/data` volume;
+- port `18790`, exposed as `EXPOSE 18790`;
+- `HIVE_AUTO_MIGRATE=false`, `HIVE_AUTO_UPGRADE=false` and `HIVE_UPDATE_CHECK=false`;
+- a health check that runs `/app/healthcheck.mjs` against `HIVE_HEALTH_URL`, by default
+  `https://localhost:18790/v1/health/ready`. Certificate verification stays on;
+  `HIVE_HEALTH_TLS_NAME` and `NODE_EXTRA_CA_CERTS` adapt it to the service certificate;
+- no package manager or `apt` in the runtime layer.
 
-`ts-core/src/reasoning.ts` is a deterministic, local-only port of the former Python `LocalHeuristicReasoningProvider`: `extractConclusions`, `summarizeSession`, `dream`, and `buildPeerCard` use the same heuristics, and reasoning conclusions use stable UUIDv5 identities so re-running a job is idempotent.
+The CLI listens on `127.0.0.1` unless `HIVEMEM_TS_CORE_HOST` is set, so a container that
+publishes its port sets `HIVEMEM_TS_CORE_HOST=0.0.0.0`. Pushing a `v*` tag runs
+`.github/workflows/release-image.yml`, which runs CI, publishes the image under its exact
+version with a build provenance attestation, and records the digest in a GitHub release.
 
-## Data Model
+## Suite integration
+
+In a Hive suite installation, `hive.sh` installs the image pinned by digest from a signed
+release manifest, in both the `core` and `full` profiles:
+
+- HiveMem depends on Oathweave and on its own Qdrant (`hivemem-qdrant`). Qdrant sits on an
+  internal `memory-data` network that only HiveMem joins.
+- Other products reach HiveMem at its internal HTTPS endpoint on port `18790`.
+- Hive Ingress maps the browser API prefix `/api/hivemem` (used by HiveXUI's memory section)
+  and the native API prefix `/memory/v1`.
+- The controller writes HiveMem's configuration, secrets, Oathweave settings and initial
+  account file. HiveXUI signs users in through Oathweave and calls HiveMem directly with a
+  token for the `hivemem` audience; no administrator credential is proxied.
+
+HiveMem still runs on its own: a standalone installation needs only the image (or a source
+build), a Qdrant it can reach and `HIVEMEM_JWT_SECRET`, and clients then use native tokens.
+
+## Console and the removed dashboard
+
+The standalone HiveMem dashboard has been removed. `GET /dashboard` returns only a
+placeholder page. `POST /dashboard/login` and the `/dashboard/api/*` webhook and queue
+routes remain as compatibility paths for existing callers. Browser workflows (memories,
+sessions, webhooks, the graph, conflicts, consolidation and the queue) are HiveXUI pages over
+the bearer-authorized `/v1` API described in [docs/CONSOLE_API.md](docs/CONSOLE_API.md). The
+browser contract is exported from [`docs/openapi.json`](docs/openapi.json) by
+`npm run export:browser-contract`.
+
+## Data model
 
 Active memories live in Qdrant collections named by scope and type:
 
 - `shared_episodic`, `shared_semantic`, `shared_procedural`
 - `<agent>_private_episodic`, `<agent>_private_semantic`, `<agent>_private_procedural`
 
-Metadata and operational records live in underscore collections such as `_agents`, `_sessions`, `_episodes`, `_conclusions`, `_queue`, `_queue_archive`, `_workspaces`, `_webhooks`, and `_webhook_deliveries`.
+Metadata and operational records live in underscore collections such as `_agents`,
+`_sessions`, `_episodes`, `_conclusions`, `_queue`, `_queue_archive`, `_workspaces`,
+`_webhooks` and `_webhook_deliveries`. Episode headers and messages share `_episodes`,
+distinguished by `record_type`.
 
-Memory records include content, type, scope, agent id, source, confidence, importance, tags, metadata, sensitivity, retention policy, `workspace_id`, optional `session_id`, validity timestamps, relationships, provenance, endorsement state, and deletion state. The TypeScript Qdrant loader also accepts older payloads that lack `id` or `workspace_id`; it synthesizes stable ids from the collection and point id and defaults missing workspaces to `default`.
+Memory records include content, type, scope, agent id, source, confidence, importance, tags,
+metadata, sensitivity, retention policy, `workspace_id`, optional `session_id`, validity
+timestamps, relationships, provenance, endorsement state and deletion state. On load, the
+Qdrant adapter accepts older payloads that lack `id` or `workspace_id`: it gives them stable
+synthetic ids from the collection and point id and defaults the workspace to `default`.
 
-Workspace isolation uses the Option A model documented in [`docs/decisions/0001-workspace-isolation.md`](docs/decisions/0001-workspace-isolation.md): collections stay global and each record carries an indexed `workspace_id`. Search/browse style requests can use `workspace_id=*` for all readable workspaces. Admin principals may read across agents; non-admin principals can read their own private memories and shared memories.
+Workspace isolation uses the Option A model in
+[`docs/decisions/0001-workspace-isolation.md`](docs/decisions/0001-workspace-isolation.md):
+collections stay global and each record carries an indexed `workspace_id`. Search and browse
+requests can use `workspace_id=*` for all readable workspaces. A token's administrator role
+does not bypass an explicit workspace restriction.
 
-## API Surface
+## API surface
 
-The TypeScript core implements the active REST contract:
+The TypeScript core implements the REST contract:
 
-- Health, readiness, dependency status, stats, metrics, embed.
-- Memory CRUD, batch, browse, search, text/hybrid search aliases, related/conflict/diff/graph helpers.
-- Sessions, episodes, messages, context packing, deterministic chat, SSE chat.
-- Queue status, retry/cancel, manual job execution, archive and consolidation helpers.
-- Workspaces, workspace members/settings/export/import/prune.
-- Agents, profile bundles, peer cards, conclusions, representations, graph entities/relations/neighborhoods.
-- Webhook endpoint CRUD, test emission, delivery listing.
-- Auth utility endpoints for login-with-token, current principal, token mint/refresh/revoke compatibility.
-- Dashboard compatibility routes for the legacy HiveMem dashboard.
+- health, readiness, dependency status, stats, metrics, capabilities and embed;
+- memory CRUD, batch, browse, search (text, hybrid and, when configured, semantic), and
+  related, conflict, diff and graph helpers;
+- sessions, episodes, messages, context packing, deterministic chat and SSE chat;
+- queue status, retry, cancel, manual runs, archive and consolidation;
+- workspaces with members, settings, export, import and prune;
+- agents, profile bundles, peer cards, conclusions, representations and graph entities,
+  relations and neighborhoods;
+- webhook endpoints, test emission and delivery history;
+- token mint, refresh, renew and revoke, and actor credential operations;
+- the dashboard compatibility routes above.
 
-The authoritative endpoint reference is [`HIVEMEM_API.md`](HIVEMEM_API.md). Generated OpenAPI snapshots for the monorepo live under [`../../docs/openapi/`](../../docs/openapi/).
+`GET /v1/capabilities` and `GET /v1/capabilities/operations` report what the running build
+implements. [`HIVEMEM_API.md`](HIVEMEM_API.md) is the endpoint reference, and
+[`docs/openapi.json`](docs/openapi.json) is the generated OpenAPI document
+(`npm run check:openapi` checks it).
 
-## Deployment
+## Native systemd deployment
 
-Use [`scripts/deploy_server.sh`](scripts/deploy_server.sh) through the root Hive deploy when possible:
+[`scripts/deploy_server.sh`](scripts/deploy_server.sh) and
+[`docker/hivemem-ts.service`](docker/hivemem-ts.service) remain for existing native
+installations. The script syncs this source to `/opt/hivemem`, installs TLS material and the
+environment file, builds `ts-core`, installs the unit as `hivemem.service` with local state in
+`/var/opt/hivemem`, restarts it and checks `/v1/health/ready`. New installations use the
+container image through the suite.
 
-```bash
-HIVEMEM_ENV_FILE=services/hive-mem/.env.production npm run deploy
-```
-
-The deploy script:
-
-1. Loads the private HiveMem env.
-2. Generates/installs TLS material.
-3. Syncs the service to `/opt/hivemem`.
-4. Copies the private env to `/opt/hivemem/.env`.
-5. Builds `ts-core`.
-6. Installs `docker/hivemem-ts.service` as `hivemem.service`.
-7. Restarts the service and verifies `/v1/health/ready`.
-
-`HIVEMEM_RUNTIME=typescript` is the only deployable runtime. Full Hive deployments use `HIVEMEM_WEB_PORT=18443` internally and expose public memory traffic through Hive Router.
-
-For the unified Hive UI, Router needs a server-side memory proxy token. The root deploy first uses `HIVE_ROUTER_MEMORY_PROXY_TOKEN` when explicitly set; otherwise it recovers `HIVEMEM_ADMIN_TOKEN`, `HERMES_HIVEMEM_TOKEN`, or `HIVEMEM_MCP_TOKEN` from the private HiveMem env and writes the value only to the remote Router env. Browser code never receives that token.
-
-## Development Commands
-
-```bash
-npm --prefix ts-core run typecheck
-npm --prefix ts-core run build
-npm --prefix ts-core test
-npm run test:dual-stack
-npm run test:hermes-dual-stack
-```
-
-The root monorepo gates are:
+## Development commands
 
 ```bash
+npm run bootstrap
 npm run typecheck
 npm run build
-npm run test
+npm test
+npm run check:openapi
 npm run scan:secrets
+npm run check:private
 ```
 
-## File Map
+`npm --prefix ts-core test` runs the core suite alone. `npm run test:dual-stack` and
+`npm run test:hermes-dual-stack` run the REST and Hermes plugin compatibility harnesses.
+
+## File map
 
 ```text
 ts-core/
-  src/server.ts       REST/dashboard compatibility server
-  src/store.ts        In-memory domain store and access checks
-  src/persistence.ts  Qdrant snapshot load/flush adapter
-  src/reasoning.ts    Deterministic local reasoning provider
-  src/auth.ts         HS256 JWT verification and signing helpers
-  tests/              REST, compatibility, and Qdrant persistence tests
+  src/cli.ts              CLI: start, check, env-schema, migrate, upgrade, rollback, issue-token
+  src/server.ts           REST API, health, metrics and dashboard compatibility routes
+  src/store.ts            In-memory domain store and access checks
+  src/persistence.ts      Qdrant snapshot load/flush adapter and token-hash embedding
+  src/semantic-index.ts   Optional semantic shadow index
+  src/reasoning.ts        Deterministic local reasoning
+  src/auth.ts             HS256 JWT signing and verification
+  src/oathweave.ts        Oathweave token verification for browser clients
+  src/upgrade.ts          Migration planning, backup and managed upgrade delegation
+  tests/                  node:test suites
+Dockerfile                Release container image
+docs/                     OpenAPI, console API, Oathweave and decision records
 docker/
-  hivemem-ts.service  Production systemd unit
-scripts/
-  deploy_server.sh    Remote deploy script
-hermes-plugin/
-  Python Hermes Agent memory provider
+  docker-compose.yml      Local development Qdrant (its hivemem service is the 1.x example)
+  hivemem-ts.service      Native systemd unit
+scripts/                  Deploy, backup, prune, registration and contract export helpers
+hermes-plugin/            Python Hermes Agent memory provider
+sdks/                     Python and TypeScript REST clients
 ```
