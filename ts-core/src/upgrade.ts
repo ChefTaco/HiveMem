@@ -1,5 +1,4 @@
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { acquireWriterLock } from './writer-lock.js';
 import { mkdirSync } from 'node:fs';
 import {
