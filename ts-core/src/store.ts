@@ -1,5 +1,5 @@
 import { semanticConfig, SemanticIndex } from "./semantic-index.js";
-import { actorCredentialDigest, actorCredentialSchema, actorReceiptCipher } from './actor-credentials.js';
+import { actorCredentialDigest, actorCredentialSchema, actorReceiptCipher, DEFAULT_RENEWAL_GRACE_SECONDS } from './actor-credentials.js';
 import { signToken } from './auth.js';
 import { allowedPrivateWebhookHost, deliverWebhook, WebhookDeliveryError, type WebhookRequest } from "./webhook-transport.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -2168,7 +2168,7 @@ export class InMemoryHiveMemStore {
     if (!isAdmin(principal)) throw new ForbiddenError("Admin role is required");
     const offset = Math.max(0, Number(params.get("offset")) || 0);
     const limit = clampLimit(Number(params.get("limit")) || 50, 50, 200);
-    const auditKinds = new Set(["api.mutation", "conflict.resolve", "retention", "tombstone"]);
+    const auditKinds = new Set(["api.mutation", "conflict.resolve", "retention", "tombstone", "actor-credential.enroll", "actor-credential.rotate", "actor-credential.renew", "actor-credential.disable"]);
     const events = [...this.operations.values()]
       .filter((entry) => auditKinds.has(String(entry.kind)))
       .filter((entry) => !Array.isArray(principal.rawClaims.workspace_ids) || (typeof entry.workspace_id === "string" && principal.rawClaims.workspace_ids.includes(entry.workspace_id)))
@@ -2716,7 +2716,7 @@ export class InMemoryHiveMemStore {
   }
 
   capabilities(): Record<string, string> {
-    return { storage: this.persistence?.kind ?? "volatile", retrieval: semanticConfig() ? "lexical-and-configured-semantic" : "deterministic-lexical", embedding: "hivemem-token-hash-v1", queue: this.workerManaged ? (this.workerEnabled ? "managed" : "disabled") : "manual", webhooks: "https", lifecycle: "retention-and-archive", backup: "operator-script", restore: "operator-script", critic: "unavailable", multimodal: "references-only", credential_expiry: "absolute-deadline", actor_credentials: "idempotent-receipt-v1", operation_matrix: "/v1/capabilities/operations" };
+    return { storage: this.persistence?.kind ?? "volatile", retrieval: semanticConfig() ? "lexical-and-configured-semantic" : "deterministic-lexical", embedding: "hivemem-token-hash-v1", queue: this.workerManaged ? (this.workerEnabled ? "managed" : "disabled") : "manual", webhooks: "https", lifecycle: "retention-and-archive", backup: "operator-script", restore: "operator-script", critic: "unavailable", multimodal: "references-only", credential_expiry: "absolute-deadline", actor_credentials: "idempotent-receipt-v1", actor_credential_renewal: "renew-grace-v1", operation_matrix: "/v1/capabilities/operations" };
   }
 
   tokenInventory(principal: AuthPrincipal): never {
@@ -2826,30 +2826,54 @@ export class InMemoryHiveMemStore {
       return JSON.parse(cipher.decrypt(receipt.encrypted_receipt)) as JsonObject;
     }
     const previousDeadline = this.agents.get(policy.agent_id)?.metadata.actor_credential_deadline;
-    const deadline = Math.min(Date.parse(policy.expires_at), typeof previousDeadline === 'number' ? previousDeadline : Infinity);
-    if (policy.action !== 'disable' && (deadline <= Date.now() + 1000 || deadline > Date.now() + 720 * 3600_000)) throw new ValidationError('Credential deadline must be within the next 720 hours');
+    // Renewal is the one action that sets a new deadline; the others keep the earliest.
+    const renew = policy.action === 'renew', now = Date.now();
+    const deadline = renew ? Date.parse(policy.expires_at) : Math.min(Date.parse(policy.expires_at), typeof previousDeadline === 'number' ? previousDeadline : Infinity);
+    if (policy.action !== 'disable' && (deadline <= now + 1000 || deadline > now + 720 * 3600_000)) throw new ValidationError('Credential deadline must be within the next 720 hours');
     this.assertWorkspacePermission(principal, policy.workspace_id, 'admin');
     if (policy.action !== 'disable' && !isAdmin(principal) && !principal.scopes.includes('admin:all') && policy.scopes.some(scope => !principal.scopes.includes(scope))) throw new ForbiddenError('Cannot grant Memory permissions the operator does not hold');
     const existing = this.agents.get(policy.agent_id);
     if (policy.action === 'enroll' && existing) throw new ConflictError('Agent already exists; preserve its identity and use reviewed rotation');
     if (policy.action !== 'enroll' && !existing) throw new NotFoundError('Agent does not exist');
-    if (policy.action === 'rotate' && existing && (existing as AgentInfo & { active?: boolean }).active === false) throw new ConflictError('Disabled agents cannot rotate');
-    const generation = this.credentialGeneration(policy.agent_id) + (policy.action === 'enroll' ? 0 : 1);
+    if ((policy.action === 'rotate' || renew) && existing && (existing as AgentInfo & { active?: boolean }).active === false) throw new ConflictError(`Disabled agents cannot ${policy.action}`);
+    if (renew) {
+      // A renewal extends what the agent already holds; it never adds a permission. Both the
+      // workspace membership (when the workspace has a record) and the last issued credential bound it.
+      const workspace = this.workspaces.get(policy.workspace_id);
+      const member = workspace?.members.find(entry => entry.agent_id === policy.agent_id);
+      if (workspace && !member) throw new ForbiddenError('Only a member of the workspace can be renewed there');
+      const issued = existing?.metadata.actor_credential_scopes;
+      const bounds = [member?.scopes, Array.isArray(issued) ? issued.map(String) : undefined].filter((value): value is string[] => value !== undefined);
+      if (!bounds.length) throw new ForbiddenError('The agent has no recorded Memory permissions to renew; use reviewed rotation');
+      if (bounds.some(held => policy.scopes.some(scope => !held.includes(scope)))) throw new ForbiddenError('Renewal cannot add Memory permissions the agent does not hold');
+    }
+    const previousGeneration = this.credentialGeneration(policy.agent_id);
+    const generation = previousGeneration + (policy.action === 'enroll' ? 0 : 1);
+    // The renewed agent's previous credentials keep working for the grace period, then stop.
+    const graceMs = renew ? (policy.grace_seconds ?? DEFAULT_RENEWAL_GRACE_SECONDS) * 1000 : 0;
+    const grace = graceMs > 0 ? { floor: Math.min(previousGeneration, this.activeGrace(policy.agent_id)?.floor ?? Infinity), until: now + graceMs } : null;
     const result: JsonObject = { ok: true, agent_id: policy.agent_id, operation_id: operationId, expires_at: new Date(deadline).toISOString() };
+    if (renew) result.previous_credential_valid_until = new Date(grace?.until ?? now).toISOString();
     if (policy.action !== 'disable') result.token = signToken(secret, { sub: policy.agent_id, role: 'agent', scope: policy.scopes.join(' '), workspace_ids: [policy.workspace_id], exp: Math.floor(deadline / 1000), token_generation: generation });
     // Finish all validation and encryption before changing live maps.
     const encrypted = policy.action === 'disable' ? null : cipher.encrypt(JSON.stringify(result));
+    const metadata: JsonObject = { ...existing?.metadata, token_generation: generation, actor_credential_operation: operationId, actor_credential_deadline: deadline,
+      ...(policy.action === 'disable' ? {} : { actor_credential_scopes: [...policy.scopes] }) };
+    // Rotation and disable are containment: no earlier credential outlives them.
+    if (grace) metadata.token_generation_grace = grace; else delete metadata.token_generation_grace;
     this.agents.set(policy.agent_id, {
       ...(existing ?? { agent_id: policy.agent_id, created_at: nowIso(), memory_counts: {} }),
       display_name: policy.display_name, description: policy.description,
       ...(policy.action === 'disable' ? { active: false } : {}),
-      metadata: { ...existing?.metadata, token_generation: generation, actor_credential_operation: operationId, actor_credential_deadline: deadline },
+      metadata,
     });
     const workspace = this.workspaces.get(policy.workspace_id);
     if (workspace && policy.action === 'enroll') this.workspaces.set(policy.workspace_id, { ...workspace, members: [...workspace.members.filter(member => member.agent_id !== policy.agent_id), { agent_id: policy.agent_id, role: 'member', scopes: policy.scopes, added_by: principal.agentId, created_at: nowIso(), updated_at: nowIso() }], updated_at: nowIso() });
     if (policy.action !== 'enroll') for (const [key, previous] of this.operations) if (previous.kind === 'actor-credential' && previous.agent_id === policy.agent_id) this.operations.set(key, { ...previous, encrypted_receipt: null, receipt_expires_at: null });
     this.operations.set(id, { id, kind: 'actor-credential', owner, request_digest: digest, action: policy.action, agent_id: policy.agent_id, encrypted_receipt: encrypted, receipt_expires_at: encrypted ? Math.min(Date.now() + 900_000, deadline) : null, created_at: nowIso() });
-    this.queuePersistence();
+    this.recordOperation(`actor-credential.${policy.action}`, principal, { agent_id: policy.agent_id, workspace_id: policy.workspace_id, operation_id: operationId,
+      token_generation: generation, ...(policy.action === 'disable' ? {} : { expires_at: new Date(deadline).toISOString() }),
+      ...(renew ? { previous_credential_valid_until: String(result.previous_credential_valid_until) } : {}) });
     return result;
   }
 
@@ -2862,11 +2886,22 @@ export class InMemoryHiveMemStore {
     this.queuePersistence();
   }
 
+  /** The generations a renewal still accepts, while its grace period lasts. */
+  private activeGrace(agentId: string): { floor: number; until: number } | null {
+    const grace = this.agents.get(agentId)?.metadata?.token_generation_grace as { floor?: unknown; until?: unknown } | undefined;
+    if (!grace || typeof grace.floor !== 'number' || typeof grace.until !== 'number' || grace.until <= Date.now()) return null;
+    return { floor: grace.floor, until: grace.until };
+  }
+
   assertCredentialActive(principal: AuthPrincipal): void {
     const agent = this.agents.get(principal.agentId);
     if (agent && (agent as AgentInfo & { active?: boolean }).active === false) throw new ForbiddenError("Agent is disabled");
     const generation = this.credentialGeneration(principal.agentId);
-    if ((principal.rawClaims.token_generation ?? 0) !== generation) throw new ForbiddenError("Agent credential has been rotated");
+    const presented = principal.rawClaims.token_generation ?? 0;
+    if (presented === generation) return;
+    const grace = this.activeGrace(principal.agentId);
+    if (grace && typeof presented === 'number' && presented >= grace.floor && presented < generation) return;
+    throw new ForbiddenError("Agent credential has been rotated");
   }
 
   rotateAgentCredentials(principal: AuthPrincipal, agentId: string): number {
@@ -2875,7 +2910,8 @@ export class InMemoryHiveMemStore {
     const agent = this.agents.get(agentId)!;
     if ((agent as AgentInfo & { active?: boolean }).active === false) throw new ForbiddenError("Agent is disabled");
     const generation = this.credentialGeneration(agentId) + 1;
-    this.agents.set(agentId, { ...agent, metadata: { ...agent.metadata, token_generation: generation } });
+    const { token_generation_grace: _grace, ...metadata } = agent.metadata;
+    this.agents.set(agentId, { ...agent, metadata: { ...metadata, token_generation: generation } });
     this.queuePersistence();
     return generation;
   }

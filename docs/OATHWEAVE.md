@@ -68,8 +68,9 @@ give its Oathweave machine client the same `hivemem:` permissions:
 `workspaces:write` lets it create the workspace its agents join (`POST /v1/workspaces`, which
 returns the existing workspace when it already exists); the creator owns it and so holds the
 workspace admin right enrollment needs. `admin:agents` reaches the durable actor-credential API
-(`POST /v1/actor-credentials/{operationId}`) to enroll, rotate and disable agents in a workspace
-it administers. It can grant an agent only scopes it holds itself, and never an `admin:` scope.
+(`POST /v1/actor-credentials/{operationId}`) to enroll, rotate, renew and disable agents in a
+workspace it administers. Agent credentials last at most 720 hours, so a product that keeps agents
+running renews each one before its deadline (see [CONSOLE_API.md](CONSOLE_API.md)). It can grant an agent only scopes it holds itself, and never an `admin:` scope.
 Leave out `admin:agents` in the link and an Oathweave grant of it has no effect. The link does
 not reach `/v1/admin/*`, which needs `admin:all`.
 

@@ -9,6 +9,7 @@
             "enum": [
               "enroll",
               "rotate",
+              "renew",
               "disable"
             ],
             "type": "string"
@@ -33,6 +34,11 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
             "type": "string"
+          },
+          "grace_seconds": {
+            "maximum": 86400,
+            "minimum": 0,
+            "type": "integer"
           },
           "scopes": {
             "items": {
@@ -79,6 +85,12 @@
           },
           "operation_id": {
             "type": "string"
+          },
+          "previous_credential_valid_until": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "token": {
             "type": "string"
@@ -5502,7 +5514,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Durable agent credential operation; explicit admin:agents, workspace authorization and scope subset required; encrypted receipt replay expires after fifteen minutes"
+        "summary": "Durable agent credential operation (enroll, rotate, renew, disable); explicit admin:agents, workspace authorization and scope subset required; renew sets a new deadline for an active workspace member without widening its scopes and keeps the previous credential for a bounded grace period; encrypted receipt replay expires after fifteen minutes"
       }
     },
     "/v1/actor-credentials/{operationId}/receipt": {

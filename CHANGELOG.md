@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Actor credential renewal. `POST /v1/actor-credentials/{operationId}` accepts a `renew`
+  action that issues an existing, active agent a fresh credential with a new deadline (at
+  most 720 hours ahead) without adding any permission: the scopes must already be held by
+  its workspace membership and its last credential. The previous credential keeps working
+  for `grace_seconds` (default one hour, at most one day), then stops. Until now a
+  credential kept its first deadline across every rotation, so an agent lost memory after
+  30 days unless it was enrolled again. Capabilities report
+  `actor_credential_renewal: renew-grace-v1`.
+- `/v1/admin/audit` lists every enroll, rotate, renew and disable as
+  `actor-credential.<action>`.
+
+### Security
+
+- `/v1/auth/refresh` and `/v1/auth/renew` keep the credential generation of the token or
+  grant presented, so a credential that a renewal is phasing out cannot mint a current one.
+
 ## 1.3.2 - 2026-11-06
 
 ### Added
