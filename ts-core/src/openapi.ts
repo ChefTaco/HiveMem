@@ -194,6 +194,7 @@ const browserSchemas = {
     operation_id: z.string(),
     expires_at: z.string().nullable().optional(),
     token: z.string().optional(),
+    previous_credential_valid_until: z.string().nullable().optional(),
   }),
   Session: SessionSchema,
   SessionCreate: SessionCreateSchema,
@@ -314,7 +315,7 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
         ],
         post: {
           ...browserOperation(
-            "Durable agent credential operation; explicit admin:agents, workspace authorization and scope subset required; encrypted receipt replay expires after fifteen minutes",
+            "Durable agent credential operation (enroll, rotate, renew, disable); explicit admin:agents, workspace authorization and scope subset required; renew sets a new deadline for an active workspace member without widening its scopes and keeps the previous credential for a bounded grace period; encrypted receipt replay expires after fifteen minutes",
             "ActorCredentialResult",
             "ActorCredentialRequest",
           ),

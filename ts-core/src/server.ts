@@ -179,6 +179,16 @@ function authorizeMetrics(
   if (!isAdminPrincipal(principal)) throw new AuthError(403, "Admin role or metrics token required");
 }
 
+/**
+ * The generation a refreshed or renewed token keeps: the one its parent carried.
+ * The parent already passed assertCredentialActive, so this is the current
+ * generation or one still in a renewal's grace period, which then ends for both.
+ */
+function presentedGeneration(principal: AuthPrincipal, store: InMemoryHiveMemStore): number {
+  const value = principal.rawClaims.token_generation;
+  return typeof value === "number" ? value : store.credentialGeneration(principal.agentId);
+}
+
 function isAdminPrincipal(principal: AuthPrincipal): boolean {
   return principal.rawClaims.role === "admin" || principal.scopes.includes("admin:all");
 }
@@ -489,7 +499,8 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
         const exp = Math.min(Number(grant.rawClaims.exp), Math.floor(Date.now() / 1000) + 30 * 86400);
         const token = signToken(jwtSecret, {
           sub: grant.agentId, role: "agent", scope: scopes.join(" "), exp,
-          token_generation: store.credentialGeneration(grant.agentId),
+          // The grant's own generation: one a renewal is phasing out cannot mint a current credential.
+          token_generation: presentedGeneration(grant, store),
           ...(grant.rawClaims.workspace_ids ? { workspace_ids: grant.rawClaims.workspace_ids } : {}),
         });
         store.recordOperation('auth.renew', grant, { expires_at: new Date(exp * 1000).toISOString() });
@@ -840,7 +851,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
           sub: principal.agentId,
           scope: principal.scopes.join(" "),
           ...(principal.rawClaims.workspace_ids ? { workspace_ids: principal.rawClaims.workspace_ids } : {}),
-          token_generation: store.credentialGeneration(principal.agentId),
+          token_generation: presentedGeneration(principal, store),
           ...(typeof principal.rawClaims.role === "string" ? { role: principal.rawClaims.role } : {}),
           parent_jtis: lineage,
           exp,

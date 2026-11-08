@@ -1,9 +1,16 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
 import { z } from 'zod';
 
-/** Product-owned request. Absolute deadlines survive coordinator retries. */
+/** The longest time a renewal keeps the previous credential working, so its holder can switch over. */
+export const MAX_RENEWAL_GRACE_SECONDS = 86_400;
+export const DEFAULT_RENEWAL_GRACE_SECONDS = 3_600;
+
+/**
+ * Product-owned request. Absolute deadlines survive coordinator retries and
+ * rotation; only an explicit `renew` of an active agent sets a new one.
+ */
 export const actorCredentialSchema = z.object({
-  action: z.enum(['enroll', 'rotate', 'disable']),
+  action: z.enum(['enroll', 'rotate', 'renew', 'disable']),
   agent_id: z.string().min(2).max(32).regex(/^[a-z0-9_-]+$/),
   display_name: z.string().min(2).max(128),
   description: z.string().max(512).default(''),
@@ -11,7 +18,9 @@ export const actorCredentialSchema = z.object({
     .refine(values => values.every(value => !value.startsWith('admin:')), 'Agent permissions must be explicit and non-admin'),
   workspace_id: z.string().min(1).max(100).regex(/^[a-z0-9_-]+$/),
   expires_at: z.iso.datetime(),
-}).strict();
+  /** renew only: seconds the previous credential keeps working (default one hour, at most one day). */
+  grace_seconds: z.number().int().min(0).max(MAX_RENEWAL_GRACE_SECONDS).optional(),
+}).strict().refine(value => value.grace_seconds === undefined || value.action === 'renew', { message: 'grace_seconds belongs to renew', path: ['grace_seconds'] });
 export type ActorCredentialRequest = z.infer<typeof actorCredentialSchema>;
 export const actorCredentialDigest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 

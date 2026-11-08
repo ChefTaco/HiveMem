@@ -44,14 +44,28 @@ Existing dashboard compatibility paths remain until replacement and recovery gat
 ## Actor credential coordination
 
 Oathweave coordinates identities; HiveMem retains ownership of its native credentials.
-`POST /v1/actor-credentials/{operationId}` accepts a reviewed explicit enroll, rotate
-or disable policy, requiring `admin:agents` and current workspace/scope authority.
+`POST /v1/actor-credentials/{operationId}` accepts a reviewed explicit enroll, rotate,
+renew or disable policy, requiring `admin:agents` and current workspace/scope authority.
 The SHA-256 operation ID binds an exact owner and request policy. The mutation and
 AES-GCM encrypted recovery receipt enter the same durable snapshot before success.
 An identical retry returns the original credential for at most fifteen minutes;
 it does not create another account or rotate its generation. Credentials retain
 their original absolute deadline across rotation. Rotation/disable invalidates
-older credential generations and recovery receipts.
+older credential generations and recovery receipts at once.
+
+`renew` is the one action that sets a new deadline, again at most 720 hours ahead.
+It applies only to an existing, active agent and never adds a permission: the
+requested scopes must be held by the agent's workspace membership (when the
+workspace has a record) and by its last issued credential, as well as by the
+operator. It issues a new credential generation. The previous generations keep
+working for `grace_seconds` (default 3600, at most 86400, 0 for none) so the agent
+can switch over, then stop; the response's `previous_credential_valid_until` says
+when. A token refreshed from a previous credential keeps that generation, so it
+stops at the same time. A rotation or disable during the grace period ends it.
+Every enroll, rotate, renew and disable is recorded in `/v1/admin/audit` as
+`actor-credential.<action>` with the agent, workspace, generation and deadline,
+never the token. `GET /v1/capabilities` reports `actor_credential_renewal:
+renew-grace-v1` when renewal is available.
 
 `DELETE /v1/actor-credentials/{operationId}/receipt` acknowledges the caller-owned
 receipt. An expired or acknowledged receipt cannot be replayed: reconcile the
