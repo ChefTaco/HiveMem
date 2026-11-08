@@ -39,18 +39,18 @@ The production runtime is the strict TypeScript core in [`ts-core/`](ts-core), b
 
 ## Install
 
-HiveMem 1.3 ships only as a container image, `ghcr.io/cheftaco/hivemem`, for `linux/amd64`
-and `linux/arm64`. Each release is tagged with its exact version (for example `1.3.1`; there
+HiveMem 1.4 ships only as a container image, `ghcr.io/cheftaco/hivemem`, for `linux/amd64`
+and `linux/arm64`. Each release is tagged with its exact version (for example `1.4.0`; there
 is no `latest` tag), and its [GitHub release](https://github.com/ChefTaco/HiveMem/releases)
 records the image digest.
 
 **With the Hive suite.** HiveMem is normally installed by `hive.sh`, the
 [Hive suite controller](https://github.com/ChefTaco/hive#install-the-suite), in both the
 `core` and `full` profiles. The controller pins the image by digest from a signed release
-manifest, writes its configuration and secrets, and runs its private Qdrant. Hive 2.0.1 pins
-HiveMem 1.3.1.
+manifest, writes its configuration and secrets, and runs its private Qdrant. Hive 2.0.6 pins
+HiveMem 1.3.2.
 
-**Legacy npm packages.** HiveMem 1.3 is not published on npm. The npm package
+**Legacy npm packages.** HiveMem 1.4 is not published on npm. The npm package
 `@hivemagnus/hivemem-server` (the name the server source still uses) and the image
 `ghcr.io/cheftaco/hivemem-server` are the legacy 1.x line from the Hive repository:
 `npm install` and `npx` resolve that package to 1.2.2, not to this release. The
@@ -73,13 +73,13 @@ docker network create hivemem
 docker run -d --name hivemem-qdrant --network hivemem -v hivemem-qdrant:/qdrant/storage \
   qdrant/qdrant:v1.18.1
 
-docker run --rm --network hivemem --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.3.2 check
+docker run --rm --network hivemem --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.4.0 check
 docker run -d --name hivemem --network hivemem -p 127.0.0.1:18790:18790 \
-  -v hivemem-data:/data --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.3.2
+  -v hivemem-data:/data --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.4.0
 
 # Once it reports healthy
 curl http://127.0.0.1:18790/v1/health/ready
-docker run --rm --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.3.2 \
+docker run --rm --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.4.0 \
   issue-token --subject operator --role admin
 ```
 
