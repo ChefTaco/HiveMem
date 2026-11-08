@@ -146,3 +146,49 @@ test("without a service link, service tokens are refused rather than treated as 
     assert.equal((await call("/v1/agents", await sign({}))).status, 401);
   } finally { await close(); }
 });
+
+test("a service linked with admin:agents enrolls agents into a workspace it creates, within its own scopes", async () => {
+  const enrollScopes = ["admin:agents", "workspaces:write", "memories:read", "memories:write", "sessions:read", "sessions:write"];
+  const { store, sign, call, close } = await serve({ links: [{ issuer, clientId, localId: "fake-fleet", scopes: enrollScopes }] });
+  try {
+    const token = await sign({ permissions: enrollScopes.map((scope) => "hivemem:" + scope) });
+    const deadline = new Date(Date.now() + 24 * 3600_000).toISOString();
+    const policy = { action: "enroll", agent_id: "fake-agent", display_name: "Synthetic agent", scopes: ["memories:read", "memories:write"], workspace_id: "fake-agents", expires_at: deadline };
+    const operation = (digit: string) => digit.repeat(64);
+    // The workspace does not exist yet: enrollment names it, so it is created first.
+    assert.equal((await call(`/v1/actor-credentials/${operation("a")}`, token, { method: "POST", body: JSON.stringify(policy) })).status, 404);
+    const workspace = { workspace_id: "fake-agents", title: "Synthetic agents" };
+    const created = await call("/v1/workspaces", token, { method: "POST", body: JSON.stringify(workspace) });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.equal(created.body?.owner_agent_id, "fake-fleet");
+    // Ensuring it again returns the same workspace.
+    assert.equal((await call("/v1/workspaces", token, { method: "POST", body: JSON.stringify(workspace) })).body?.owner_agent_id, "fake-fleet");
+    const enrolled = await call(`/v1/actor-credentials/${operation("b")}`, token, { method: "POST", body: JSON.stringify(policy) });
+    assert.equal(enrolled.status, 200, JSON.stringify(enrolled.body));
+    assert.equal(enrolled.body?.agent_id, "fake-agent");
+    const agentToken = String(enrolled.body?.token);
+    const remembered = await call("/v1/memories", agentToken, { method: "POST", body: JSON.stringify({ content: "synthetic agent memory", type: "semantic", scope: "private", workspace_id: "fake-agents" }) });
+    assert.equal(remembered.status, 201, JSON.stringify(remembered.body));
+    // The same request replays the same credential; a second enrollment of that agent conflicts.
+    assert.equal((await call(`/v1/actor-credentials/${operation("b")}`, token, { method: "POST", body: JSON.stringify(policy) })).body?.token, agentToken);
+    assert.equal((await call(`/v1/actor-credentials/${operation("c")}`, token, { method: "POST", body: JSON.stringify(policy) })).status, 409);
+    const rotated = await call(`/v1/actor-credentials/${operation("d")}`, token, { method: "POST", body: JSON.stringify({ ...policy, action: "rotate" }) });
+    assert.equal(rotated.status, 200, JSON.stringify(rotated.body));
+    assert.equal(store.credentialGeneration("fake-agent"), 1);
+    // It cannot grant what it does not hold, reach full administration, or enroll without admin:agents.
+    assert.equal((await call(`/v1/actor-credentials/${operation("e")}`, token, { method: "POST", body: JSON.stringify({ ...policy, agent_id: "fake-other", scopes: ["webhooks:write"] }) })).status, 403);
+    assert.equal((await call("/v1/admin/agents", token)).status, 403);
+    const narrowed = await sign({ permissions: ["hivemem:workspaces:write", "hivemem:memories:read"] });
+    assert.equal((await call(`/v1/actor-credentials/${operation("f")}`, narrowed, { method: "POST", body: JSON.stringify({ ...policy, agent_id: "fake-other" }) })).status, 403);
+  } finally { await close(); }
+});
+
+test("admin:agents on the Oathweave side is ignored unless the service link allows it", async () => {
+  const { call, sign, close } = await serve({ links: [{ issuer, clientId, localId: "fake-fleet", scopes: ["workspaces:write", "memories:read", "memories:write"] }] });
+  try {
+    const token = await sign({ permissions: ["hivemem:admin:agents", "hivemem:workspaces:write", "hivemem:memories:read", "hivemem:memories:write"] });
+    assert.equal((await call("/v1/workspaces", token, { method: "POST", body: JSON.stringify({ workspace_id: "fake-agents" }) })).status, 201);
+    const policy = { action: "enroll", agent_id: "fake-agent", display_name: "Synthetic agent", scopes: ["memories:read"], workspace_id: "fake-agents", expires_at: new Date(Date.now() + 3600_000).toISOString() };
+    assert.equal((await call(`/v1/actor-credentials/${"a".repeat(64)}`, token, { method: "POST", body: JSON.stringify(policy) })).status, 403);
+  } finally { await close(); }
+});

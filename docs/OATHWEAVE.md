@@ -54,6 +54,25 @@ manual rotation exists for this credential. Revoke it in Oathweave by deactivati
 the client or changing its secret; tokens already issued expire within their
 lifetime.
 
+### Enrolling agents as a service
+
+A product that creates agents, such as a fleet manager, can enroll them with its service
+identity instead of a long-lived admin token. Link it with exactly the scopes it uses and
+give its Oathweave machine client the same `hivemem:` permissions:
+
+```json
+[{"issuer":"oathweave-example","clientId":"example-fleet","localId":"example-fleet",
+  "scopes":["admin:agents","workspaces:write","memories:read","memories:write","sessions:read","sessions:write"]}]
+```
+
+`workspaces:write` lets it create the workspace its agents join (`POST /v1/workspaces`, which
+returns the existing workspace when it already exists); the creator owns it and so holds the
+workspace admin right enrollment needs. `admin:agents` reaches the durable actor-credential API
+(`POST /v1/actor-credentials/{operationId}`) to enroll, rotate and disable agents in a workspace
+it administers. It can grant an agent only scopes it holds itself, and never an `admin:` scope.
+Leave out `admin:agents` in the link and an Oathweave grant of it has no effect. The link does
+not reach `/v1/admin/*`, which needs `admin:all`.
+
 The integration is under development. A passing unit suite does not authorize
 production adoption. Restore rehearsal, permissions, native clients, and browser
 workflow parity must pass before switching an existing installation.
