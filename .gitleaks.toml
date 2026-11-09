@@ -1,0 +1,32 @@
+title = "Repository secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Documentation placeholder or public environment setting, not a credential."
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^README\.md$''']
+regexes = ['''^HIVEMEM_TS_PERSISTENCE=qdrant$''']
+
+[[allowlists]]
+description = "Public scrypt domain-separation salt, not a credential."
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^ts\-core/src/actor\-credentials\.ts$''']
+regexes = ['''^hivemem\-actor\-receipt\-v1$''']
+
+[[allowlists]]
+description = "Reviewed synthetic test value; exact value and file only."
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^ts\-core/tests/auth\-hardening\.test\.ts$''']
+regexes = ['''^dummy\-signing\-secret\-at\-least\-32\-bytes$''']
+
+[[allowlists]]
+description = "Reviewed synthetic test value; exact value and file only."
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^ts\-core/tests/error\-privacy\.test\.ts$''']
+regexes = ['''^synthetic\-test\-signing\-key\-at\-least\-32\-bytes$''']
