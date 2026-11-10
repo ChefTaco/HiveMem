@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1] - 2026-11-10
+
+### Security
+
+- Run containers on a pinned, maintained Node 26 runtime with patched system libraries.
+- Use SQLite 3.54.1 for the packaged recovery engine and verify committed WAL snapshots, permissions and overwrite refusal.
+
 ## 1.4.0 - 2026-11-08
 
 ### Added
