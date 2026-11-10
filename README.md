@@ -40,7 +40,7 @@ The production runtime is the strict TypeScript core in [`ts-core/`](ts-core), b
 ## Install
 
 HiveMem 1.4 ships only as a container image, `ghcr.io/cheftaco/hivemem`, for `linux/amd64`
-and `linux/arm64`. Each release is tagged with its exact version (for example `1.4.0`; there
+and `linux/arm64`. Each release is tagged with its exact version (for example `1.4.1`; there
 is no `latest` tag), and its [GitHub release](https://github.com/ChefTaco/HiveMem/releases)
 records the image digest.
 
@@ -71,15 +71,15 @@ EOF
 
 docker network create hivemem
 docker run -d --name hivemem-qdrant --network hivemem -v hivemem-qdrant:/qdrant/storage \
-  qdrant/qdrant:v1.18.1
+  ghcr.io/cheftaco/hive-qdrant:1.18.3-3
 
-docker run --rm --network hivemem --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.4.0 check
+docker run --rm --network hivemem --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.4.1 check
 docker run -d --name hivemem --network hivemem -p 127.0.0.1:18790:18790 \
-  -v hivemem-data:/data --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.4.0
+  -v hivemem-data:/data --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.4.1
 
 # Once it reports healthy
 curl http://127.0.0.1:18790/v1/health/ready
-docker run --rm --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.4.0 \
+docker run --rm --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.4.1 \
   issue-token --subject operator --role admin
 ```
 
@@ -136,7 +136,7 @@ See [APP_ARCHITECTURE.md](APP_ARCHITECTURE.md) for internals, request flow, data
 Security hardening notes, including webhook destination policy, token handling, and reporting guidance, live in [SECURITY.md](SECURITY.md).
 
 The optional `test:webhook-worker` drill requires Docker, OpenSSL, the locally
-available `qdrant/qdrant:v1.18.1` image and a completed build. Run it with
+available `ghcr.io/cheftaco/hive-qdrant:1.18.3-3` image and a completed build. Run it with
 `HIVEMEM_WEBHOOK_TEST_CONFIRM=isolated-synthetic-installation npm run test:webhook-worker`.
 It creates its own temporary native CLI profile, scoped API identity, Qdrant
 container and HTTPS receiver. Only that isolated profile allows the exact
