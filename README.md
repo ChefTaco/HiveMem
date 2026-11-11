@@ -246,3 +246,10 @@ and records completion after durable persistence. Restarts preserve its ID and
 credential generation; changed inputs, unrelated existing accounts or a missing
 persisted identity require reviewed enrollment or recovery. Rehearsals skip this
 initializer. Oathweave issuer/subject mappings remain explicit product configuration.
+
+## Native deployment runtime checks
+
+Source deployment checks the Node.js used by npm and `/usr/bin/node`, which the
+installed systemd service uses, against the current package `engines.node` policy.
+An unsupported runtime stops deployment before remote writes or service restarts.
+Update the system interpreter as well as any shell-specific Node.js installation.

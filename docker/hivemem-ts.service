@@ -17,7 +17,7 @@ Environment=HIVEMEM_TS_PERSISTENCE=qdrant
 Environment=HIVEMEM_STORAGE_PATH=/var/opt/hivemem
 Environment=HIVEMEM_TS_TLS_CERT_FILE=/opt/hivemem/certs/server.crt
 Environment=HIVEMEM_TS_TLS_KEY_FILE=/opt/hivemem/certs/server.key
-ExecStart=/usr/bin/env node /opt/hivemem/ts-core/dist/src/cli.js
+ExecStart=/usr/bin/node /opt/hivemem/ts-core/dist/src/cli.js
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
