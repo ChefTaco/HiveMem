@@ -98,6 +98,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+node "$REPO_DIR/scripts/check-node-runtime.mjs"
+
 if [[ "$ENV_FILE" != /* ]]; then
   ENV_FILE="$REPO_DIR/$ENV_FILE"
 fi
@@ -136,16 +138,6 @@ if [[ "$REFRESH_ADMIN_TOKEN" != "true" && "$REFRESH_ADMIN_TOKEN" != "false" ]]; 
   exit 1
 fi
 
-# A copied local env keeps the established refresh behavior by default. A
-# preserved remote env retains its existing admin bearer unless the operator
-# explicitly opts in with HIVEMEM_REFRESH_ADMIN_TOKEN=true.
-if [[ "$PRESERVE_REMOTE_ENV" != "true" && "$REFRESH_ADMIN_TOKEN" == "true" ]]; then
-  if [[ "$DRY_RUN" != "true" ]]; then
-    node "$REPO_DIR/scripts/refresh_admin_token.mjs" "$ENV_FILE"
-  else
-    node "$REPO_DIR/scripts/refresh_admin_token.mjs" "$ENV_FILE" --check
-  fi
-fi
 
 SSH_USER="${SSH_USERNAME:-${DEPLOY_USERNAME:-deploy}}"
 SSH_PASS="${SSH_PASSWORD:-${DEPLOY_PASSWORD:-}}"
@@ -273,6 +265,24 @@ remote_sudo() {
 ' "$script" | remote_cmd "sudo -n bash -s"
   fi
 }
+
+NODE_RUNTIME_RANGE="$(node "$REPO_DIR/scripts/check-node-runtime.mjs" --print-range)"
+if [[ "$DRY_RUN" != "true" ]]; then
+  remote_cmd "node --input-type=module - --engines '$NODE_RUNTIME_RANGE'" < "$REPO_DIR/scripts/check-node-runtime.mjs"
+  remote_cmd "/usr/bin/node --input-type=module - --engines '$NODE_RUNTIME_RANGE'" < "$REPO_DIR/scripts/check-node-runtime.mjs"
+fi
+
+# A copied local env keeps the established refresh behavior by default. A
+# preserved remote env retains its existing admin bearer unless the operator
+# explicitly opts in with HIVEMEM_REFRESH_ADMIN_TOKEN=true.
+if [[ "$PRESERVE_REMOTE_ENV" != "true" && "$REFRESH_ADMIN_TOKEN" == "true" ]]; then
+  if [[ "$DRY_RUN" != "true" ]]; then
+    node "$REPO_DIR/scripts/refresh_admin_token.mjs" "$ENV_FILE"
+  else
+    node "$REPO_DIR/scripts/refresh_admin_token.mjs" "$ENV_FILE" --check
+  fi
+fi
+
 
 echo ""
 echo "=============================================="

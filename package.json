@@ -13,7 +13,7 @@
     "test:hermes-dual-stack": "npm --prefix ts-core run build && .venv/bin/python -m pytest -q hermes-plugin/tests/test_hivemem_provider.py::test_typescript_core_hermes_plugin_contract",
     "typecheck": "npm --prefix ts-core run typecheck && npm --prefix sdks/typescript run typecheck",
     "build": "npm --prefix ts-core run build && npm --prefix sdks/typescript run build",
-    "test": "npm --prefix ts-core test && npm run test:ts-sdk && node --test scripts/build-hermes-plugin.test.mjs scripts/export-browser-contract.test.mjs scripts/container-image.test.mjs",
+    "test": "npm --prefix ts-core test && npm run test:ts-sdk && node --test scripts/build-hermes-plugin.test.mjs scripts/export-browser-contract.test.mjs scripts/container-image.test.mjs && node --test scripts/check-node-runtime.test.mjs",
     "scan:secrets": "bash scripts/scan-secrets.sh",
     "check:private": "bash scripts/check-private-data.sh",
     "hooks:install": "git config core.hooksPath .githooks",
