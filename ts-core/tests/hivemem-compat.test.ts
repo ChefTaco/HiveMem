@@ -100,6 +100,29 @@ describe("HiveMem TypeScript compatibility core", () => {
     assert.equal(response.status, 401);
   });
 
+  it("serves the suite health endpoints and echoes request ids", async () => {
+    const live = await fetch(`${baseUrl}/health/live`, { headers: { authorization: "Bearer not-a-token" } });
+    assert.equal(live.status, 200);
+    assert.equal(live.headers.get("cache-control"), "no-store");
+    assert.equal(((await live.json()) as { status: string; service: string }).status, "live");
+
+    const ready = await fetch(`${baseUrl}/health/ready`);
+    assert.equal(ready.status, 200);
+    const readyBody = (await ready.json()) as { status: string; service: string; checks: Record<string, { status: string }> };
+    assert.equal(readyBody.status, "ready");
+    assert.equal(readyBody.service, "hivemem");
+    assert.equal(readyBody.checks.store?.status, "up");
+    assert.equal(readyBody.checks.worker?.status, "up");
+
+    const echoed = await fetch(`${baseUrl}/v1/health/live`, { headers: { "x-request-id": "fixture-request-1" } });
+    assert.equal(echoed.headers.get("x-request-id"), "fixture-request-1");
+    const legacy = await fetch(`${baseUrl}/v1/memories/browse`, { headers: { "x-hive-request-id": "fixture-request-2" } });
+    assert.equal(legacy.status, 401);
+    assert.equal(legacy.headers.get("x-request-id"), "fixture-request-2");
+    const generated = await fetch(`${baseUrl}/`, { headers: { "x-request-id": "unsafe id with spaces" } });
+    assert.match(generated.headers.get("x-request-id") ?? "", /^[0-9a-f-]{36}$/);
+  });
+
   it("enforces strict JWT claims, issuance authority, scopes, revocation, and body limits", async () => {
     assert.throws(() => createHiveMemServer({ jwtSecret: "change_me" }), /non-placeholder secret/);
 

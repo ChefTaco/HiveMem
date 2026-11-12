@@ -4,7 +4,7 @@ import { metadata, findPackageRoot } from './release/runtime.js';
 const releaseMetadata = () => metadata(findPackageRoot(import.meta.url, '@hivemagnus/hivemem-server'));
 import type { JsonValue } from "./types.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { configuredOathweaveServiceVerifier, configuredOathweaveVerifier, type OathweaveIdentity, type OathweaveServiceIdentity } from "./oathweave.js";
+import { configuredOathweaveServiceVerifier, configuredOathweaveVerifier, type OathweaveIdentity, type OathweaveServiceIdentity } from "./identity.js";
 import { timingSafeEqual } from "node:crypto";
 import { AuthError, isUsableSigningSecret, MAX_TOKEN_LINEAGE, parentTokenIds, signToken, verifyBearerToken } from "./auth.js";
 import { DEFAULT_AGENT_SCOPES } from "./issue-token.js";
@@ -13,6 +13,8 @@ import type { AuthPrincipal, ChatResponse } from "./types.js";
 import { ValidationError } from "./validation.js";
 import { TokenRevocationStore } from "./revocation-store.js";
 import { memoryOperations } from './operations.js';
+import { createHealth } from "@hivemagnus/hive-common/health";
+import { createRequestContext, runWithRequestContext } from "@hivemagnus/hive-common/context";
 
 export interface HiveMemServerOptions {
   jwtSecret?: string;
@@ -399,6 +401,11 @@ function errorMessage(error: unknown): string {
   return "Internal server error";
 }
 
+/** Health probes answer without credentials, persistence flushes or maintenance gating. */
+function isHealthPath(pathname: string): boolean {
+  return pathname.startsWith("/v1/health") || pathname === "/health/live" || pathname === "/health/ready";
+}
+
 export type HiveMemRequestHandler = (request: IncomingMessage, response: ServerResponse) => void;
 
 export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMemRequestHandler {
@@ -423,7 +430,16 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
   const metricsAllowLoopback = options.metricsAllowLoopback ?? process.env.HIVEMEM_METRICS_ALLOW_LOOPBACK === "true";
   if (metricsToken !== undefined && metricsToken.length < 32) throw new Error("HIVEMEM_METRICS_TOKEN must be at least 32 characters");
 
-  return async (request, response) => {
+  const health = createHealth({
+    service: "hivemem",
+    version: releaseMetadata().version,
+    checks: [
+      { name: "store", check: async () => (await store.persistenceHealth()).ready },
+      { name: "worker", check: () => store.workerHealth().ready },
+    ],
+  });
+
+  const handle = async (request: IncomingMessage, response: ServerResponse, requestId: string): Promise<void> => {
     try {
       if(maintenanceActive(new URL(request.url || '/', 'http://localhost').pathname)){await sendJson(response,503,{error:'Hive is undergoing maintenance'});return;}
       (request as IncomingMessage & { hiveMaxBodyBytes?: number }).hiveMaxBodyBytes = maxBodyBytes;
@@ -432,7 +448,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       const method = request.method ?? "GET";
 
       const header = request.headers.authorization;
-      if ((verifyIdentity || verifyService) && typeof header === 'string' && header.startsWith('Bearer ') && !url.pathname.startsWith('/v1/health')) {
+      if ((verifyIdentity || verifyService) && typeof header === 'string' && header.startsWith('Bearer ') && !isHealthPath(url.pathname)) {
         const supplied = header.slice(7);
         // Routing only: the selected verifier checks the signature and every claim.
         const algorithm = unverifiedJwtPart(supplied, 0).alg;
@@ -476,7 +492,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
         return;
       }
 
-      if (!url.pathname.startsWith("/v1/health") && url.pathname !== "/metrics" && url.pathname !== "/") responseStores.set(response, store);
+      if (!isHealthPath(url.pathname) && url.pathname !== "/metrics" && url.pathname !== "/") responseStores.set(response, store);
       if (responseStores.has(response)) await store.flushPersistence();
 
       if (method === "POST" && url.pathname === "/v1/auth/login") {
@@ -521,6 +537,14 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
         const health = await healthPayload(store);
         await sendJson(response, health.status === "ok" ? 200 : 503, health);
         return;
+      }
+      if (method === "GET" || method === "HEAD") {
+        const standard = health.handle(url.pathname);
+        if (standard) {
+          const result = await standard;
+          await sendJsonWithHeaders(response, result.status, result.body, { ...result.headers });
+          return;
+        }
       }
 
       if (method === "GET" && (url.pathname === "/dashboard" || url.pathname.startsWith("/dashboard/memories/"))) {
@@ -771,7 +795,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       await store.flushPersistence();
       const neededScope = requiredScope(method, url.pathname);
       if (neededScope) requireScope(principal, neededScope);
-      if (!["GET", "HEAD"].includes(method) && url.pathname !== "/v1/memories/conflicts" && !/search|context|chat|browse|embed/.test(url.pathname)) responseAudits.set(response, { principal, path: url.pathname, method, requestId: String(request.headers["x-hive-request-id"] ?? "").slice(0, 128) });
+      if (!["GET", "HEAD"].includes(method) && url.pathname !== "/v1/memories/conflicts" && !/search|context|chat|browse|embed/.test(url.pathname)) responseAudits.set(response, { principal, path: url.pathname, method, requestId });
 
       if (method === "GET" && url.pathname === "/v1/capabilities") { await sendJson(response, 200, store.capabilities()); return; }
       if (method === 'GET' && url.pathname === '/v1/capabilities/operations') { await sendJson(response, 200, { operations: memoryOperations }); return; }
@@ -1346,9 +1370,15 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
     } catch (error) {
       const status = errorStatus(error);
       const detail = status >= 500 && !(error instanceof Error && error.name === "UnsupportedOperationError") ? "Internal server error" : errorMessage(error);
-      if (status >= 500) console.error(error);
+      if (status >= 500) console.error(`request ${requestId} failed:`, error);
       await sendJson(response, status, { detail });
     }
+  };
+
+  return (request, response) => {
+    const context = createRequestContext(request.headers);
+    response.setHeader("x-request-id", context.requestId);
+    return runWithRequestContext(context, () => handle(request, response, context.requestId));
   };
 }
 

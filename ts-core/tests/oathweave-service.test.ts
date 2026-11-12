@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWTPayload } from "jose";
 import { createHiveMemHandler } from "../src/server.js";
-import { createOathweaveServiceVerifier } from "../src/oathweave.js";
+import { createOathweaveServiceVerifier } from "../src/identity.js";
 import { parseServiceLinks, type ServiceLink } from "../src/account-links.js";
 import { InMemoryHiveMemStore } from "../src/store.js";
 import type { AuthPrincipal } from "../src/types.js";
