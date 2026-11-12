@@ -4,6 +4,7 @@ import type {
   ConclusionPage,
   ConclusionRecord,
   ContextResponse,
+  HiveAuditPage,
   HiveMemOptions,
   KnowledgeSourceSyncResponse,
   MemoryRecord,
@@ -137,6 +138,15 @@ export class HiveMem {
    */
   createWorkspace(workspaceId: string, options: WorkspaceCreateOptions = {}): Promise<WorkspaceRecord> {
     return this.request("POST", "/v1/workspaces", { body: JSON.stringify({ ...options, workspace_id: workspaceId }) });
+  }
+
+  /**
+   * One page of the suite audit export (`GET /v1/audit/export`), oldest first. Pass the last
+   * non-null `nextCursor` as `after`; `nextCursor` is null only on an empty page (caught up). Requires an administrator
+   * or an Oathweave service token with `hivemem:audit:read`.
+   */
+  exportAudit(options: { after?: string; limit?: number } = {}): Promise<HiveAuditPage> {
+    return this.request("GET", "/v1/audit/export", {}, { after: options.after, limit: options.limit });
   }
 
   getMemory(memoryId: string, options: { includeHistory?: boolean } = {}): Promise<MemoryRecord> {

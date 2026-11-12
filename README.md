@@ -147,6 +147,14 @@ HTTP failure, and stops queuing disabled endpoints. All resources created by the
 drill are removed. Existing profiles, services and webhook endpoints are never
 selected.
 
+## Audit export
+
+`GET /v1/audit/export` serves HiveMem's audit records as suite HiveAuditRecord v1, oldest
+first and keyset-paged, for a security collector. It accepts administrators and Oathweave
+service tokens holding the permission **`hivemem:audit:read`** (link the service with the
+`audit:read` scope). See [HIVEMEM_API.md](HIVEMEM_API.md#suite-audit-export) and
+[docs/OATHWEAVE.md](docs/OATHWEAVE.md#audit-export-collectors).
+
 ## Contributing
 
 If you'd like to improve HiveMem, start with [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, test commands, and pull request guidance.

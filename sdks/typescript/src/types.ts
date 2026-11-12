@@ -223,6 +223,24 @@ export interface ConclusionPage {
   next_cursor: string | null;
 }
 
+/** HiveAuditRecord v1, the suite audit export record. */
+export interface HiveAuditRecord {
+  id: string;
+  product: "hivemem" | "hiveskills" | "ardentstudio" | "embermend";
+  occurredAt: string;
+  action: string;
+  outcome: "success" | "failure";
+  actor: { type: "user" | "service" | "agent" | "system"; id: string; issuer?: string; displayName?: string };
+  target?: { type?: string; id?: string };
+  subject?: { actorId?: string; agentRef?: string; nodeId?: string };
+  details: Record<string, string | number | boolean | null>;
+}
+
+export interface HiveAuditPage {
+  data: HiveAuditRecord[];
+  nextCursor: string | null;
+}
+
 export interface WebhookEndpoint {
   id: string;
   owner_agent_id: string;

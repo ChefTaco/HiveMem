@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `GET /v1/audit/export`: the suite audit export. Stored audit records (mutations, tombstones,
+  conflict resolutions, retention, renewals and agent credential operations) as HiveAuditRecord
+  v1, oldest first, keyset-paged on `(created_at, id)` with an opaque `after` cursor and `limit`
+  1-200 (default 100). Every page with records carries its last record's cursor; `nextCursor`
+  is `null` only on an empty page. Empty `target` and `subject` are omitted. Audit records are
+  now timestamped strictly increasingly so a cursor never skips a record written in the same
+  millisecond. Allowed for administrators and for Oathweave service tokens with the
+  `hivemem:audit:read` permission (service link scope `audit:read`; native-issuer tokens through the link's issuer, as for other
+  service routes); others get 403, and a
+  request without a token 401. `details` is an allowlist of redacted scalars and never holds
+  memory content, bodies or secrets. `HiveAuditRecordSchema` is exported and the record is in
+  the OpenAPI document. `GET /v1/admin/audit` is unchanged.
+- Audit records now note the actor type (`service`, `user` or `agent`) and, for Oathweave
+  callers, the issuer and service client.
+- TypeScript SDK: `exportAudit({ after, limit })` with `HiveAuditRecord` and `HiveAuditPage`
+  types.
+
 ## [1.5.0] - 2026-11-12
 
 ### Changed

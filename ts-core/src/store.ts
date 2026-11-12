@@ -3,6 +3,7 @@ import { actorCredentialDigest, actorCredentialSchema, actorReceiptCipher, DEFAU
 import { signToken } from './auth.js';
 import { allowedPrivateWebhookHost, deliverWebhook, WebhookDeliveryError, type WebhookRequest } from "./webhook-transport.js";
 import { createHash, randomUUID } from "node:crypto";
+import { auditExportPage, HIVEMEM_AUDIT_KINDS, type HiveAuditRecord } from "./audit-export.js";
 import { deterministicEmbedding, type HiveMemPersistence, type HiveMemSnapshot, type PersistedAgentRecord } from "./persistence.js";
 import {
   DEFAULT_REASONING_SETTINGS,
@@ -336,6 +337,16 @@ function queueSummary(job: QueueJobRecord): QueueJobSummary {
     finished_at: job.finished_at,
     error: publicQueueError(job.error),
   };
+}
+
+/** Who performed an operation, for the audit export; never a credential. */
+function operationActor(principal: AuthPrincipal): JsonObject {
+  const claims = principal.rawClaims;
+  if (claims.credential === "oathweave-service")
+    return { actor_type: "service", ...(typeof claims.iss === "string" ? { actor_issuer: claims.iss } : {}), ...(typeof claims.client_id === "string" ? { actor_client_id: claims.client_id } : {}) };
+  if (typeof claims.session_id === "string" && typeof claims.iss === "string") return { actor_type: "user", actor_issuer: claims.iss };
+  if (claims.role === "admin") return { actor_type: "user" };
+  return { actor_type: "agent" };
 }
 
 function isAdmin(principal: AuthPrincipal): boolean {
@@ -1075,6 +1086,8 @@ export class InMemoryHiveMemStore {
   private readonly operations = new Map<string, JsonObject>();
   private readonly queueOperationsByJob = new Map<string, string>();
   private queueOperationsPrunedAt = 0;
+  /** Last audit timestamp (epoch ms): each new audit record is strictly later, so export cursors never skip one. */
+  private lastAuditAt = 0;
   private readonly memories = new Map<string, MemoryRecord>();
   private readonly agents = new Map<string, AgentInfo & { metadata: JsonObject }>();
   private readonly conclusions = new Map<string, ConclusionRecord>();
@@ -1179,6 +1192,7 @@ export class InMemoryHiveMemStore {
     for (const record of snapshot.operations ?? []) {
       if (typeof record.id !== "string") continue;
       this.operations.set(record.id, record);
+      if (typeof record.created_at === "string" && HIVEMEM_AUDIT_KINDS.has(String(record.kind))) this.lastAuditAt = Math.max(this.lastAuditAt, Date.parse(record.created_at) || 0);
       if (record.kind === "queue-operation" && typeof record.job_id === "string") this.queueOperationsByJob.set(record.job_id, record.id);
     }
     for (const record of snapshot.memories) this.memories.set(record.id, record);
@@ -2728,8 +2742,19 @@ export class InMemoryHiveMemStore {
 
   recordOperation(kind: string, principal: AuthPrincipal, details: JsonObject): void {
     const id = randomUUID();
-    this.operations.set(id, { id, kind, actor: principal.agentId, created_at: nowIso(), ...details });
+    // Strictly increasing, even within a millisecond or if the clock steps back, so a record
+    // written after an export page was read always sorts after that page's cursor.
+    this.lastAuditAt = Math.max(Date.now(), this.lastAuditAt + 1);
+    this.operations.set(id, { id, kind, actor: principal.agentId, ...operationActor(principal), created_at: new Date(this.lastAuditAt).toISOString(), ...details });
     this.queuePersistence();
+  }
+
+  /** GET /v1/audit/export: every stored audit record, oldest first (the caller is authorized by the server). */
+  auditExport(principal: AuthPrincipal, params: URLSearchParams): { data: HiveAuditRecord[]; nextCursor: string | null } {
+    const workspaces = principal.rawClaims.workspace_ids;
+    // A workspace-restricted administrator sees only its workspaces, as in the admin audit view.
+    const include = Array.isArray(workspaces) ? (entry: JsonObject) => typeof entry.workspace_id === "string" && workspaces.includes(entry.workspace_id) : undefined;
+    return auditExportPage(this.operations.values(), params, include as ((entry: Readonly<Record<string, unknown>>) => boolean) | undefined);
   }
 
   capabilities(): Record<string, string> {

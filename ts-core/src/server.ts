@@ -13,6 +13,7 @@ import type { AuthPrincipal, ChatResponse } from "./types.js";
 import { ValidationError } from "./validation.js";
 import { TokenRevocationStore } from "./revocation-store.js";
 import { memoryOperations } from './operations.js';
+import { HIVEMEM_AUDIT_EXPORT_PATH, HIVEMEM_AUDIT_READ_PERMISSION, HIVEMEM_AUDIT_READ_SCOPE } from "./audit-export.js";
 import { createHealth } from "@hivemagnus/hive-common/health";
 import { createRequestContext, runWithRequestContext } from "@hivemagnus/hive-common/context";
 
@@ -797,6 +798,14 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       if (neededScope) requireScope(principal, neededScope);
       if (!["GET", "HEAD"].includes(method) && url.pathname !== "/v1/memories/conflicts" && !/search|context|chat|browse|embed/.test(url.pathname)) responseAudits.set(response, { principal, path: url.pathname, method, requestId });
 
+      if (method === "GET" && url.pathname === HIVEMEM_AUDIT_EXPORT_PATH) {
+        // Administrators, or an Oathweave service token holding hivemem:audit:read.
+        const auditService = principal.rawClaims.credential === OATHWEAVE_SERVICE_CREDENTIAL && principal.scopes.includes(HIVEMEM_AUDIT_READ_SCOPE);
+        if (!isAdminPrincipal(principal) && !auditService) throw new AuthError(403, `Admin role or the ${HIVEMEM_AUDIT_READ_PERMISSION} service permission is required`);
+        response.setHeader("Cache-Control", "no-store");
+        await sendJson(response, 200, store.auditExport(principal, url.searchParams));
+        return;
+      }
       if (method === "GET" && url.pathname === "/v1/capabilities") { await sendJson(response, 200, store.capabilities()); return; }
       if (method === 'GET' && url.pathname === '/v1/capabilities/operations') { await sendJson(response, 200, { operations: memoryOperations }); return; }
 
