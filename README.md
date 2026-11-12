@@ -40,7 +40,7 @@ The production runtime is the strict TypeScript core in [`ts-core/`](ts-core), b
 ## Install
 
 HiveMem 1.4 ships only as a container image, `ghcr.io/cheftaco/hivemem`, for `linux/amd64`
-and `linux/arm64`. Each release is tagged with its exact version (for example `1.4.2`; there
+and `linux/arm64`. Each release is tagged with its exact version (for example `1.5.0`; there
 is no `latest` tag), and its [GitHub release](https://github.com/ChefTaco/HiveMem/releases)
 records the image digest.
 
@@ -73,13 +73,13 @@ docker network create hivemem
 docker run -d --name hivemem-qdrant --network hivemem -v hivemem-qdrant:/qdrant/storage \
   ghcr.io/cheftaco/hive-qdrant:1.18.3-3
 
-docker run --rm --network hivemem --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.4.2 check
+docker run --rm --network hivemem --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.5.0 check
 docker run -d --name hivemem --network hivemem -p 127.0.0.1:18790:18790 \
-  -v hivemem-data:/data --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.4.2
+  -v hivemem-data:/data --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.5.0
 
 # Once it reports healthy
 curl http://127.0.0.1:18790/v1/health/ready
-docker run --rm --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.4.2 \
+docker run --rm --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.5.0 \
   issue-token --subject operator --role admin
 ```
 
