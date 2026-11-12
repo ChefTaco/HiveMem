@@ -12,7 +12,10 @@ import type {
   QueueStatusResponse,
   SearchResponse,
   SessionRecord,
+  TokenProvider,
   WebhookEndpoint,
+  WorkspaceCreateOptions,
+  WorkspaceRecord,
 } from "./types.js";
 
 function env(name: string): string | undefined {
@@ -29,6 +32,8 @@ export class HiveMem {
   private readonly fetchImpl: typeof fetch;
   private readonly requestIdProvider?: () => string;
   private readonly authRefresh?: () => string | undefined | Promise<string | undefined>;
+  private readonly tokenProvider?: TokenProvider;
+  private readonly extraHeaders?: HiveMemOptions["headers"];
   private readonly onRequest?: (method: string, url: string, init: RequestInit) => void;
   private readonly onResponse?: (response: Response) => void;
 
@@ -41,6 +46,8 @@ export class HiveMem {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.requestIdProvider = options.requestIdProvider;
     this.authRefresh = options.authRefresh;
+    this.tokenProvider = options.tokenProvider;
+    this.extraHeaders = options.headers;
     this.onRequest = options.onRequest;
     this.onResponse = options.onResponse;
   }
@@ -54,12 +61,20 @@ export class HiveMem {
     for (const [key, value] of Object.entries(params ?? {})) {
       if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
     }
-    const headers = new Headers(init.headers);
+    const extra = typeof this.extraHeaders === "function" ? await this.extraHeaders() : this.extraHeaders;
+    const headers = new Headers(extra);
+    new Headers(init.headers).forEach((value, key) => headers.set(key, value));
     headers.set("Accept", "application/json");
     if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     if (this.requestIdProvider) headers.set("X-Request-ID", this.requestIdProvider());
+    headers.delete("Authorization");
+    if (this.tokenProvider) {
+      const provided = await this.tokenProvider({ forceRefresh: false });
+      if (provided) this.token = provided;
+    }
     if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
 
+    let reauthorized = false;
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
       const refreshed = await this.authRefresh?.();
       if (refreshed) {
@@ -69,10 +84,22 @@ export class HiveMem {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
       try {
-        const requestInit = { ...init, method, headers, signal: controller.signal };
+        const requestInit: RequestInit = { ...init, method, headers, signal: controller.signal, redirect: "error" };
         this.onRequest?.(method, String(url), requestInit);
         const response = await this.fetchImpl(url, requestInit);
         this.onResponse?.(response);
+        if (response.status === 401 && this.tokenProvider && !reauthorized) {
+          // A service token may have expired or been revoked: fetch a fresh one and retry once.
+          reauthorized = true;
+          const fresh = await this.tokenProvider({ forceRefresh: true });
+          if (fresh) {
+            await response.body?.cancel().catch(() => undefined);
+            this.token = fresh;
+            headers.set("Authorization", `Bearer ${this.token}`);
+            attempt -= 1;
+            continue;
+          }
+        }
         if (response.status >= 500 && attempt < this.maxRetries) continue;
         if (!response.ok) {
           let details: unknown;
@@ -96,6 +123,15 @@ export class HiveMem {
 
   health(): Promise<Record<string, unknown>> {
     return this.request("GET", "/v1/health");
+  }
+
+  /**
+   * Create a workspace, owned by the caller (`POST /v1/workspaces`, scope `workspaces:write`).
+   * Idempotent: when the workspace already exists and the caller can read it, the server returns
+   * it unchanged. An archived workspace ID is a 409.
+   */
+  createWorkspace(workspaceId: string, options: WorkspaceCreateOptions = {}): Promise<WorkspaceRecord> {
+    return this.request("POST", "/v1/workspaces", { body: JSON.stringify({ ...options, workspace_id: workspaceId }) });
   }
 
   getMemory(memoryId: string, options: { includeHistory?: boolean } = {}): Promise<MemoryRecord> {

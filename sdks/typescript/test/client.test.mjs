@@ -137,3 +137,78 @@ test("ContextPackage supports nested retrieval entries without preformatted cont
   assert.deepEqual(context.toOpenAI(), [{ role: "system", content: "Memory: The synthetic code is amber-cedar." }]);
   assert.deepEqual(context.toAnthropic(), [{ role: "user", content: "Memory: The synthetic code is amber-cedar." }]);
 });
+
+const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+test("HiveMem createWorkspace posts the workspace ID and options", async () => {
+  const seen = {};
+  const client = new HiveMem({
+    baseUrl: "https://hive.test",
+    token: "tok",
+    workspaceId: "ignored-default",
+    fetchImpl: async (url, init) => {
+      seen.url = String(url);
+      seen.method = init.method;
+      seen.body = JSON.parse(init.body);
+      return json({ workspace_id: seen.body.workspace_id, owner_agent_id: "agent", title: seen.body.title, members: [] }, 201);
+    },
+  });
+  const workspace = await client.createWorkspace("team", { title: "Team", members: [{ agent_id: "helper", role: "member", scopes: ["memories:read"] }] });
+  assert.equal(seen.url, "https://hive.test/v1/workspaces");
+  assert.equal(seen.method, "POST");
+  assert.deepEqual(seen.body, { title: "Team", members: [{ agent_id: "helper", role: "member", scopes: ["memories:read"] }], workspace_id: "team" });
+  assert.equal(workspace.workspace_id, "team");
+});
+
+test("HiveMem tokenProvider supplies the token and is refreshed and retried once on 401", async () => {
+  const providerCalls = [];
+  const auths = [];
+  let issued = 0;
+  const client = new HiveMem({
+    baseUrl: "https://hive.test",
+    tokenProvider: ({ forceRefresh }) => {
+      providerCalls.push(forceRefresh);
+      if (forceRefresh) issued += 1;
+      return `svc-${issued}`;
+    },
+    fetchImpl: async (_url, init) => {
+      const auth = init.headers.get("authorization");
+      auths.push(auth);
+      return auth === "Bearer svc-0" ? json({ detail: "expired" }, 401) : json({ status: "ok" });
+    },
+  });
+  assert.deepEqual(await client.health(), { status: "ok" });
+  assert.deepEqual(providerCalls, [false, true]);
+  assert.deepEqual(auths, ["Bearer svc-0", "Bearer svc-1"]);
+
+  // A second 401 after the refresh is final: no loop.
+  const always401 = new HiveMem({ baseUrl: "https://hive.test", tokenProvider: () => "x", fetchImpl: async () => json({ detail: "no" }, 401) });
+  await assert.rejects(always401.health(), (error) => error.statusCode === 401);
+
+  // Without a provider a 401 is not retried, and a static token still works.
+  let calls = 0;
+  const fixed = new HiveMem({ baseUrl: "https://hive.test", token: "static", fetchImpl: async (_url, init) => { calls += 1; assert.equal(init.headers.get("authorization"), "Bearer static"); return json({ detail: "no" }, 401); } });
+  await assert.rejects(fixed.health(), (error) => error.statusCode === 401);
+  assert.equal(calls, 1);
+});
+
+test("HiveMem refuses redirects and sends extra headers without overriding its own", async () => {
+  const seen = [];
+  let n = 0;
+  const client = new HiveMem({
+    baseUrl: "https://hive.test",
+    token: "tok",
+    headers: () => ({ "x-request-id": `req-${++n}`, traceparent: "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", authorization: "Bearer spoofed", accept: "text/html" }),
+    fetchImpl: async (_url, init) => {
+      seen.push({ redirect: init.redirect, rid: init.headers.get("x-request-id"), tp: init.headers.get("traceparent"), auth: init.headers.get("authorization"), accept: init.headers.get("accept") });
+      return json({ status: "ok" });
+    },
+  });
+  await client.health();
+  await client.health();
+  assert.deepEqual(seen[0], { redirect: "error", rid: "req-1", tp: "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", auth: "Bearer tok", accept: "application/json" });
+  assert.equal(seen[1].rid, "req-2");
+
+  const staticHeaders = new HiveMem({ baseUrl: "https://hive.test", headers: { "x-hive-caller": "studio" }, fetchImpl: async (_url, init) => { assert.equal(init.headers.get("x-hive-caller"), "studio"); assert.equal(init.headers.get("authorization"), null); return json({}); } });
+  await staticHeaders.health();
+});
