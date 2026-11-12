@@ -7,6 +7,9 @@ selected in Oathweave, not an inferred native JWT issuer. TLS verification and
 online session revocation are mandatory. Tokens have one exact product audience
 and a maximum fifteen-minute lifetime. Permissions are not inferred from roles.
 Native machine credentials and standalone authentication remain available.
+Verification uses the shared `@hivemagnus/hive-common` Oathweave verifier with no
+clock tolerance and an online session check on every request; tokens must carry a
+`roles` array and a `clientId` claim.
 
 `HIVEMEM_OATHWEAVE_IDENTITIES_JSON` is a protected JSON array of explicit account links:
 

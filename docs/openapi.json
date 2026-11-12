@@ -5452,6 +5452,26 @@
         "summary": "Dashboard queue"
       }
     },
+    "/health/live": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Suite liveness (hive-common)"
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Suite readiness with dependency checks (hive-common)"
+      }
+    },
     "/metrics": {
       "get": {
         "responses": {

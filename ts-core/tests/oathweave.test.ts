@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { createHiveMemHandler } from "../src/server.js";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
-import { createOathweaveVerifier } from "../src/oathweave.js";
+import { createOathweaveVerifier } from "../src/identity.js";
 import { InMemoryHiveMemStore } from "../src/store.js";
 import { signToken } from "../src/auth.js";
 import type { AuthPrincipal } from "../src/types.js";
