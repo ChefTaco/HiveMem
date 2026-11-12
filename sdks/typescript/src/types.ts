@@ -18,8 +18,80 @@ export interface HiveMemOptions {
   fetchImpl?: typeof fetch;
   requestIdProvider?: () => string;
   authRefresh?: () => string | undefined | Promise<string | undefined>;
+  /**
+   * Supplies the bearer token, for example a short-lived Oathweave service token. Called before
+   * each request with `forceRefresh: false`; after a 401 it is called again with
+   * `forceRefresh: true` and the request is retried once with the token it returns. Returning
+   * `undefined` falls back to `token`.
+   */
+  tokenProvider?: TokenProvider;
+  /**
+   * Extra headers sent on every request, such as `x-request-id` or `traceparent` taken from the
+   * caller's request context. A function is called once per request. They never replace the
+   * client's own `Accept` or `Content-Type` headers, and `Authorization` comes only from `token`,
+   * `tokenProvider` or `authRefresh`.
+   */
+  headers?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
   onRequest?: (method: string, url: string, init: RequestInit) => void;
   onResponse?: (response: Response) => void;
+}
+
+export interface TokenProviderContext {
+  /** True after the server answered 401: the cached token must not be reused. */
+  forceRefresh: boolean;
+}
+
+export type TokenProvider = (context: TokenProviderContext) => string | undefined | Promise<string | undefined>;
+
+export type WorkspaceRole = "viewer" | "member" | "admin" | "owner";
+
+export interface WorkspaceMember {
+  agent_id: string;
+  role: WorkspaceRole;
+  scopes: string[];
+  added_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface WorkspaceSanitizationPolicy {
+  mode: "warn" | "redact" | "reject" | null;
+  detect_pii: boolean | null;
+  detect_secrets: boolean | null;
+  deny_regexes: string[];
+}
+
+export interface WorkspacePolicy {
+  retention_days: number | null;
+  allowed_scopes: string[];
+  reasoning_provider: string | null;
+  consolidation_cadence_seconds: number | null;
+  webhooks_enabled: boolean;
+  sanitization: WorkspaceSanitizationPolicy;
+  agent_overrides: Record<string, Record<string, unknown>>;
+  session_overrides: Record<string, Record<string, unknown>>;
+}
+
+export interface WorkspaceRecord {
+  workspace_id: string;
+  owner_agent_id: string;
+  title: string | null;
+  description: string | null;
+  metadata: Record<string, unknown>;
+  policy: WorkspacePolicy;
+  members: WorkspaceMember[];
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+/** Optional fields of `POST /v1/workspaces`; `workspace_id` is the method's first argument. */
+export interface WorkspaceCreateOptions {
+  title?: string | null;
+  description?: string | null;
+  metadata?: Record<string, unknown>;
+  policy?: Partial<Omit<WorkspacePolicy, "sanitization">> & { sanitization?: Partial<WorkspaceSanitizationPolicy> };
+  members?: Array<Pick<WorkspaceMember, "agent_id"> & Partial<Pick<WorkspaceMember, "role" | "scopes">>>;
 }
 
 export interface MemoryRecord {

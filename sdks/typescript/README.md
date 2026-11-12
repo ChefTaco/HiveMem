@@ -4,7 +4,8 @@ TypeScript client for [HiveMem](https://github.com/ChefTaco/HiveMem), the shared
 
 - Zero runtime dependencies; uses the platform `fetch` (Node.js 18.17+, Deno, Bun, browsers, edge runtimes).
 - ESM-only, with bundled type declarations.
-- Retries 5xx responses, supports request timeouts, request IDs, and token refresh hooks.
+- Retries 5xx responses, supports request timeouts, request IDs, extra headers, and token providers that refresh on 401.
+- Never follows redirects (`redirect: "error"`), so the bearer token stays with the configured origin.
 
 ## Install
 
@@ -53,9 +54,29 @@ const messages = context.toOpenAI(); // or context.toAnthropic()
 | `fetchImpl` | | global `fetch` |
 | `requestIdProvider` | | sends `X-Request-ID` when set |
 | `authRefresh` | | called before each attempt; a returned token replaces the current one |
+| `tokenProvider` | | `({ forceRefresh }) => token`; called before each request, and again with `forceRefresh: true` after a 401, when the request is retried once |
+| `headers` | | extra headers on every request, or a function returning them per request; cannot replace `Accept`, `Content-Type` or `Authorization` |
 | `onRequest` / `onResponse` | | observability hooks |
 
 Explicit constructor options win over environment variables. Environment variables are only read where `process.env` exists.
+
+### Service tokens and request propagation
+
+A product calling HiveMem with a short-lived Oathweave service token passes a `tokenProvider`
+instead of a static `token`. Cache the token in the provider and fetch a new one when
+`forceRefresh` is true (HiveMem answered 401) or the cached one is near expiry. Use `headers` to
+forward the caller's request ID and trace context:
+
+```ts
+const hivemem = new HiveMem({
+  baseUrl: "https://memory.example.com",
+  tokenProvider: ({ forceRefresh }) => serviceTokens.get({ forceRefresh }),
+  headers: () => ({ "x-request-id": currentRequestId(), traceparent: currentTraceparent() }),
+});
+
+// Create the workspace your agents join; returns the existing one if it is already there.
+const workspace = await hivemem.createWorkspace("team-alpha", { title: "Team Alpha" });
+```
 
 ## Common operations
 
