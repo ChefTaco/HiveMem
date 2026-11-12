@@ -2,7 +2,7 @@
 
 All notable changes to `@hivemagnus/hivemem-sdk`.
 
-## [Unreleased]
+## [1.2.0] - 2026-11-12
 
 ### Added
 
