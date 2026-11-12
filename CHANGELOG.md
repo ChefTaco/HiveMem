@@ -7,9 +7,11 @@
 - Verify Oathweave browser tokens with the shared `@hivemagnus/hive-common` verifier, keeping
   HiveMem's rules: no clock tolerance, an online session check on every request, a required
   `roles` array and `clientId` claim, the `hivemem` audience and explicit account links.
-  Service-account tokens use the shared claim rules; their signature and native issuer are
-  still checked locally, because native issuers are not https URLs. The shared Oathweave
-  conformance vectors run in the test suite.
+  Service-account tokens use a second shared verifier (`@hivemagnus/hive-common` 0.3.0) on the
+  same JWKS cache, with service links' native issuers as `nativeIssuers` and https issuers as
+  `issuer`. A service link issuer that is neither a lowercase native identifier nor an https
+  URL is now refused at startup. The shared Oathweave conformance vectors, including the
+  native-issuer vectors, run in the test suite.
 - Mutation audit receipts record the request's `x-request-id` (or `x-hive-request-id`), or a
   generated ID when the caller sent none.
 

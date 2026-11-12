@@ -1,15 +1,14 @@
 // Oathweave identities for HiveMem, built on the shared @hivemagnus/hive-common verifier.
 import {
-  OATHWEAVE_MAX_LIFETIME_SEC,
+  OATHWEAVE_NATIVE_ISSUER_PATTERN,
   OATHWEAVE_REQUEST_TIMEOUT_MS,
   OathweaveError,
   assertOathweaveEndpoint,
   createOathweaveVerifier as createSharedVerifier,
-  principalFromClaims,
   type OathweaveServicePrincipal,
   type OathweaveUserPrincipal,
 } from "@hivemagnus/hive-common/oathweave";
-import { createRemoteJWKSet, customFetch, jwtVerify, type JWTVerifyGetKey } from "jose";
+import { createRemoteJWKSet, customFetch, type JWTVerifyGetKey } from "jose";
 
 /** HiveMem's resource audience. */
 export const HIVEMEM_OATHWEAVE_AUDIENCE = "hivemem";
@@ -65,17 +64,37 @@ export function createOathweaveVerifier(options: OathweaveOptions, overrides: Ov
 }
 
 export interface OathweaveServiceOptions {
-  /** Native issuers whose client_credentials tokens may be accepted. */
+  /**
+   * Issuers whose client_credentials tokens may be accepted: Oathweave native identifiers such
+   * as `hive-iam`, or https issuers. Each one comes from an explicit service link.
+   */
   issuers: readonly string[];
   audience: string;
 }
 
+/** Fills the shared verifier's required https issuer when every link names a native issuer. */
+const NO_HTTPS_SERVICE_ISSUER = "https://no-linked-issuer.invalid";
+
+/** Split service-link issuers into the shared verifier's https and native issuers. */
+function serviceIssuers(issuers: readonly string[]) {
+  const https: string[] = [];
+  const native: string[] = [];
+  for (const issuer of new Set(issuers)) {
+    if (OATHWEAVE_NATIVE_ISSUER_PATTERN.test(issuer)) native.push(issuer);
+    else if (issuer.startsWith("https://")) https.push(issuer);
+    else
+      throw new Error(
+        "Each Oathweave service link issuer must be an https URL or a lowercase native identifier such as hive-iam",
+      );
+  }
+  return { https, native };
+}
+
 /**
- * Oathweave service-account (client_credentials) tokens, checked with the shared claim rules.
- * They are signed by Oathweave's native issuer, which is a name such as `hive-iam` rather than
- * an https URL, so the signature and issuer check stays here: the shared verifier accepts only
- * https issuers. Accepted only when short-lived, bound to this audience and issued to the client
- * named in their subject (`clientId` equals `sub`). Failure is closed.
+ * Oathweave service-account (client_credentials) tokens through the shared verifier. Native
+ * issuers (a name such as `hive-iam`) and https issuers share one key set. Accepted only when
+ * short-lived, bound to this audience, issued by a linked issuer and issued to the client named
+ * in their subject (`clientId` equals `sub`). Failure is closed.
  */
 export function createOathweaveServiceVerifier(
   options: OathweaveServiceOptions,
@@ -83,19 +102,22 @@ export function createOathweaveServiceVerifier(
   overrides: Pick<Overrides, "now"> = {},
 ) {
   if (!options.issuers.length) throw new Error("At least one service issuer is required");
-  const issuers = [...options.issuers];
+  const { https, native } = serviceIssuers(options.issuers);
+  const linked = new Set<string>([...https, ...native]);
+  const verifier = createSharedVerifier({
+    issuer: https.length ? https : NO_HTTPS_SERVICE_ISSUER,
+    nativeIssuers: native,
+    audience: options.audience,
+    keys,
+    accept: "service",
+    clientIdClaim: "clientId",
+    clockToleranceSec: 0,
+    ...(overrides.now ? { now: overrides.now } : {}),
+  });
   return async (token: string): Promise<OathweaveServicePrincipal> => {
-    const { payload } = await jwtVerify(token, keys, {
-      algorithms: ["RS256"],
-      issuer: issuers,
-      audience: options.audience,
-      requiredClaims: ["sub", "iat", "exp", "jti"],
-      maxTokenAge: OATHWEAVE_MAX_LIFETIME_SEC,
-      ...(overrides.now ? { currentDate: new Date(overrides.now()) } : {}),
-    });
-    if (payload.aud !== options.audience) throw new OathweaveError("invalid_audience");
-    const principal = principalFromClaims(payload, { accept: "service", maxLifetimeSec: OATHWEAVE_MAX_LIFETIME_SEC });
-    if (principal.kind !== "service" || payload.clientId !== payload.sub) throw new OathweaveError("invalid_claims");
+    const principal = await verifier.verifyService(token);
+    // Only linked issuers count, never the placeholder.
+    if (!linked.has(principal.issuer)) throw new OathweaveError("invalid_issuer");
     return principal;
   };
 }
@@ -139,7 +161,7 @@ export function configuredOathweaveVerifier() {
 export function configuredOathweaveServiceVerifier(issuers: readonly string[]) {
   if (!issuers.length) return undefined;
   serviceVerifier ??= createOathweaveServiceVerifier(
-    { issuers: [...new Set(issuers)], audience: HIVEMEM_OATHWEAVE_AUDIENCE },
+    { issuers, audience: HIVEMEM_OATHWEAVE_AUDIENCE },
     configuredKeys(),
   );
   return serviceVerifier;
