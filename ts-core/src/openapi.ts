@@ -354,6 +354,8 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
       "/v1/health": { get: operation("Health") },
       "/v1/health/live": { get: operation("Liveness") },
       "/v1/health/ready": { get: operation("Readiness") },
+      "/health/live": { get: operation("Suite liveness (hive-common)") },
+      "/health/ready": { get: operation("Suite readiness with dependency checks (hive-common)") },
       "/v1/stats": { get: browserOperation("Read memory statistics", "MemoryStats") },
       "/v1/auth/login": { post: operation("Token compatibility login") },
       "/v1/memories": {

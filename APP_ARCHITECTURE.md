@@ -20,7 +20,7 @@ suite, HiveXUI is its browser console and calls the same REST API as every other
 | Reasoning and queue | `ts-core/src/reasoning.ts`, `ts-core/src/worker-startup.ts` | Summaries, consolidation, dreams, peer cards, conflict scans and message extraction are deterministic local heuristics with no external LLM call. Writes enqueue jobs in a Qdrant-backed queue run by the managed background worker. |
 | Webhooks | `ts-core/src/webhook-transport.ts` | HMAC-signed deliveries to HTTPS destinations, with delivery history. |
 | Native auth | `ts-core/src/auth.ts`, `ts-core/src/revocation-store.ts` | HS256 JWTs signed with `HIVEMEM_JWT_SECRET`, carrying role and scopes, with persistent `jti` revocation. `issue-token` mints tokens locally. Optional renewal grants use a separate `HIVEMEM_RENEWAL_SECRET`. |
-| Suite auth | `ts-core/src/oathweave.ts`, `ts-core/src/account-links.ts` | Optional RS256 Oathweave tokens for HiveXUI, verified against `OATHWEAVE_ISSUER`, `OATHWEAVE_JWKS_URL` and `OATHWEAVE_USERINFO_URL` and mapped to existing agents only through explicit `HIVEMEM_OATHWEAVE_IDENTITIES_JSON` links. See [docs/OATHWEAVE.md](docs/OATHWEAVE.md). |
+| Suite auth | `ts-core/src/identity.ts`, `ts-core/src/account-links.ts` | Optional RS256 Oathweave tokens for HiveXUI, verified against `OATHWEAVE_ISSUER`, `OATHWEAVE_JWKS_URL` and `OATHWEAVE_USERINFO_URL` and mapped to existing agents only through explicit `HIVEMEM_OATHWEAVE_IDENTITIES_JSON` links. See [docs/OATHWEAVE.md](docs/OATHWEAVE.md). |
 | Credential coordination | `ts-core/src/actor-credentials.ts`, `ts-core/src/initial-account.ts` | Idempotent enroll, rotate and disable operations with encrypted recovery receipts, and the protected first-start account file (`HIVEMEM_INITIAL_ACCOUNT_FILE`) used by fresh suite installations. See [docs/CONSOLE_API.md](docs/CONSOLE_API.md). |
 | Local state | `ts-core/src/writer-lock.ts`, `ts-core/src/durable-file.ts` | Under `HIVEMEM_STORAGE_PATH` (default `${HIVE_HOME:-~/.hive}/memory`): a `flock` writer lock that allows one writer per data directory, the write-recovery journal and the revocation list. |
 | Migrations | `ts-core/src/upgrade.ts`, `ts-core/src/migrations/` | `migrate --plan` is read-only; `migrate` backs up and applies the persisted-format migration. Startup refuses pending migrations unless `HIVE_AUTO_MIGRATE=true`. |
@@ -153,7 +153,7 @@ ts-core/
   src/semantic-index.ts   Optional semantic shadow index
   src/reasoning.ts        Deterministic local reasoning
   src/auth.ts             HS256 JWT signing and verification
-  src/oathweave.ts        Oathweave token verification for browser clients
+  src/identity.ts         Oathweave token verification (shared hive-common verifier)
   src/upgrade.ts          Migration planning, backup and managed upgrade delegation
   tests/                  node:test suites
 Dockerfile                Release container image

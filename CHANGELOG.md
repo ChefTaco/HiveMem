@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Verify Oathweave browser tokens with the shared `@hivemagnus/hive-common` verifier, keeping
+  HiveMem's rules: no clock tolerance, an online session check on every request, a required
+  `roles` array and `clientId` claim, the `hivemem` audience and explicit account links.
+  Service-account tokens use the shared claim rules; their signature and native issuer are
+  still checked locally, because native issuers are not https URLs. The shared Oathweave
+  conformance vectors run in the test suite.
+- Mutation audit receipts record the request's `x-request-id` (or `x-hive-request-id`), or a
+  generated ID when the caller sent none.
+
+### Added
+
+- `GET /health/live` and `GET /health/ready` in the suite format, with `store` and `worker`
+  checks. Every existing `/v1/health*` path is unchanged.
+- Every response carries `x-request-id`, echoing a valid inbound `x-request-id`,
+  `x-hive-request-id` or `x-correlation-id`, and server error logs name it. W3C `traceparent`
+  is read for the request context.
+
 ## [1.4.2] - 2026-11-11
 
 - Refuse native deployments and service restarts on Node.js below the package security minimum before changing remote state.
