@@ -1,6 +1,6 @@
 [Unit]
 Description=HiveMem TypeScript Compatibility API
-Documentation=https://github.com/ChefTaco/hive
+Documentation=https://github.com/ChefTaco/HiveMem
 After=network-online.target qdrant.service
 Wants=network-online.target
 

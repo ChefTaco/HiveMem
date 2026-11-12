@@ -19,10 +19,10 @@ classifiers = [
 dependencies = ["httpx>=0.28.0"]
 
 [project.urls]
-Homepage = "https://github.com/ChefTaco/hive/tree/main/services/hive-mem/sdks/python"
-Repository = "https://github.com/ChefTaco/hive"
-Issues = "https://github.com/ChefTaco/hive/issues"
-Changelog = "https://github.com/ChefTaco/hive/blob/main/services/hive-mem/CHANGELOG.md"
+Homepage = "https://github.com/ChefTaco/HiveMem/tree/main/sdks/python"
+Repository = "https://github.com/ChefTaco/HiveMem"
+Issues = "https://github.com/ChefTaco/HiveMem/issues"
+Changelog = "https://github.com/ChefTaco/HiveMem/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["setuptools>=77"]

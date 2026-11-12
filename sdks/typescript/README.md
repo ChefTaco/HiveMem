@@ -1,6 +1,6 @@
 # @hivemagnus/hivemem-sdk
 
-TypeScript client for [HiveMem](https://github.com/ChefTaco/hive/tree/main/services/hive-mem), the shared long-term memory service for AI agents. It wraps the HiveMem REST API with typed helpers for memories, search, sessions, prompt context, peer cards, conclusions, queue operations, and webhooks.
+TypeScript client for [HiveMem](https://github.com/ChefTaco/HiveMem), the shared long-term memory service for AI agents. It wraps the HiveMem REST API with typed helpers for memories, search, sessions, prompt context, peer cards, conclusions, queue operations, and webhooks.
 
 - Zero runtime dependencies; uses the platform `fetch` (Node.js 18.17+, Deno, Bun, browsers, edge runtimes).
 - ESM-only, with bundled type declarations.
@@ -12,7 +12,7 @@ TypeScript client for [HiveMem](https://github.com/ChefTaco/hive/tree/main/servi
 npm install @hivemagnus/hivemem-sdk
 ```
 
-You need a running HiveMem server and an agent token. See the [HiveMem README](https://github.com/ChefTaco/hive/tree/main/services/hive-mem#readme) for how to run the server and register an agent.
+You need a running HiveMem server and an agent token. See the [HiveMem README](https://github.com/ChefTaco/HiveMem#readme) for how to run the server and register an agent.
 
 ## Quick start
 
