@@ -41,7 +41,8 @@ export const MemoryRecordSchema = MemoryWriteSchema.required().omit({ confidence
 export const MemorySearchRequestSchema = z.object({
   query: z.string().optional(), workspace_id: z.string().optional(), scope: scope.optional(), type: type.optional(),
   limit: z.number().optional(), offset: z.number().optional(), tags: z.array(z.string()).optional(),
-  session_id: z.string().optional(), agent_filter: z.string().optional(), from_self: z.boolean().optional(),
+  session_id: z.string().optional(), agent_filter: z.string().optional(),
+  agent_id: z.string().regex(/^[a-z0-9_-]{2,32}$/).optional(), from_self: z.boolean().optional(),
   min_confidence: z.number().optional(), min_importance: z.number().optional(),
   include_deleted: z.boolean().optional(), include_sensitive: z.boolean().optional(),
   filters: object.optional(), graph: object.optional(), diversity: object.optional(), as_of: z.string().optional(),

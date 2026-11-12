@@ -356,7 +356,9 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
       "/v1/health/ready": { get: operation("Readiness") },
       "/health/live": { get: operation("Suite liveness (hive-common)") },
       "/health/ready": { get: operation("Suite readiness with dependency checks (hive-common)") },
-      "/v1/stats": { get: browserOperation("Read memory statistics", "MemoryStats") },
+      "/v1/stats": { get: { ...browserOperation("Read memory statistics; agent_id scopes every count to that agent's records (only that agent or an administrator)", "MemoryStats"), parameters: [
+        { name: "agent_id", in: "query", schema: { type: "string", pattern: "^[a-z0-9_-]{2,32}$" } },
+      ] } },
       "/v1/auth/login": { post: operation("Token compatibility login") },
       "/v1/memories": {
         post: browserOperation("Create memory", "MemoryRecord", "MemoryWrite", "201"),
@@ -367,6 +369,7 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500 } },
           { name: "workspace_id", in: "query", schema: { type: "string" } },
           { name: "scope", in: "query", schema: { enum: ["private", "shared"] } },
+          { name: "agent_id", in: "query", schema: { type: "string", pattern: "^[a-z0-9_-]{2,32}$" } },
         ] },
       },
       "/v1/memories/{id}": {

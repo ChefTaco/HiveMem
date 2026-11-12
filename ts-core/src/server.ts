@@ -924,7 +924,13 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
         return;
       }
       if (method === "GET" && url.pathname === "/v1/stats") {
-        await sendJson(response, 200, store.stats());
+        // Per-agent counts include another agent's private records, so only that agent or an
+        // administrator may ask for them.
+        const statsAgent = url.searchParams.get("agent_id");
+        if (statsAgent && statsAgent !== principal.agentId && !isAdminPrincipal(principal)) {
+          throw new AuthError(403, "Per-agent statistics are limited to the agent itself or an administrator");
+        }
+        await sendJson(response, 200, store.stats(url.searchParams));
         return;
       }
       if (method === "POST" && (url.pathname === "/v1/memories/search/text" || url.pathname === "/v1/memories/search/hybrid")) {

@@ -106,6 +106,7 @@ export interface SearchRequest {
   workspace_id?: string;
   session_id?: string;
   agent_filter?: string;
+  agent_id?: string;
   from_self?: boolean;
   min_confidence?: number;
   min_importance?: number;
