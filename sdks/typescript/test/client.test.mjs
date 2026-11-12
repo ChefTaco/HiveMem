@@ -84,6 +84,8 @@ test("HiveMem history, conclusion and operation reads use the documented routes"
   await client.getConclusion("c1");
   await client.listConclusionsPage("peer", { limit: 2, cursor: "abc" });
   await client.getQueueOperation("op-1", "dream");
+  await client.exportAudit({ after: "cursor-1", limit: 5 });
+  await client.exportAudit();
 
   assert.equal(urls[0].pathname, "/v1/memories/m%2F1");
   assert.equal(urls[0].searchParams.get("include_history"), "true");
@@ -96,6 +98,11 @@ test("HiveMem history, conclusion and operation reads use the documented routes"
   assert.equal(urls[3].pathname, "/v1/queue/operations/op-1");
   assert.equal(urls[3].searchParams.get("task_type"), "dream");
   assert.equal(urls[3].searchParams.get("workspace_id"), "team");
+  assert.equal(urls[4].pathname, "/v1/audit/export");
+  assert.equal(urls[4].searchParams.get("after"), "cursor-1");
+  assert.equal(urls[4].searchParams.get("limit"), "5");
+  assert.equal(urls[4].searchParams.has("workspace_id"), false);
+  assert.equal(urls[5].search, "");
 });
 
 test("HiveMem context helpers preserve real server context, citations and budget", async () => {

@@ -152,6 +152,7 @@ All REST API router paths below are mounted under `/v1`. Dashboard routes are mo
 | Workspaces | `GET` | `/v1/workspaces/{workspace_id}/settings` | Resolved policy cascade |
 | Workspaces | `POST` | `/v1/workspaces/{workspace_id}/schedule-dream` | Queue workspace dream consolidation |
 | Admin | `GET` | `/v1/admin/audit` | Query append-only write audit log |
+| Audit | `GET` | `/v1/audit/export` | Suite audit export (HiveAuditRecord v1), keyset-paged; admin or service `hivemem:audit:read` |
 | Admin | `POST` | `/v1/backup` | Unavailable (501); use root host-bound backup |
 | Admin | `POST` | `/v1/restore` | Unavailable (501); use isolated root recovery |
 | Admin | `GET` | `/v1/admin/workspaces/{workspace_id}/export` | Export portable workspace bundle |
@@ -763,6 +764,67 @@ not produce a partial service-only archive through HTTP.
 Workspace export returns `workspace_id`, readable current `memories`, accessible `sessions`, `exported_at`, and `format_version:1`. Import is unavailable (501).
 
 `GET /v1/admin/audit` requires admin authorization and reads persisted redacted operations, with pagination and supported workspace/action filters. It does not read the former Python JSONL audit log.
+
+### Suite Audit Export
+
+```http
+GET /v1/audit/export?after=<cursor>&limit=<n>
+```
+
+Returns `{"data":[HiveAuditRecord...],"nextCursor":string|null}`: every stored audit record,
+oldest first by `(created_at, id)`, with no retention window. `limit` is 1-200 (default 100;
+larger values are capped at 200). `after` is the opaque `nextCursor` of the previous page, and a
+page holds only records strictly after it. Every page with records carries the cursor of its
+last record, even the final page; `nextCursor` is `null` only when `data` is empty, meaning the
+caller is caught up. Keep the last non-null cursor and poll it again later. Records are
+timestamped strictly increasingly, so a record written after a page was read never sorts before
+that page's cursor. A malformed
+`limit` or cursor is `400`. The response is `Cache-Control: no-store`.
+
+Callers: an administrator (`role: admin` or `admin:all`; a workspace-restricted administrator
+sees only records of its workspaces), or an Oathweave service token whose permissions include
+`hivemem:audit:read` and whose service link lists the `audit:read` scope (native-issuer
+tokens, such as Oathweave's default `hive-iam` issuer, are accepted when the link names that
+issuer) (see
+[docs/OATHWEAVE.md](docs/OATHWEAVE.md)). No token is `401`; anyone else is `403`.
+
+Each record follows HiveAuditRecord v1 (`HiveAuditRecord` in `docs/openapi.json`):
+
+```json
+{"id":"hivemem:audit:<operation id>","product":"hivemem","occurredAt":"2026-01-01T00:00:00.000Z",
+ "action":"memory.delete","outcome":"success",
+ "actor":{"type":"agent","id":"<agent id>"},"target":{"type":"memory","id":"<memory id>"},
+ "subject":{"actorId":"<agent id>"},
+ "details":{"native_kind":"api.mutation","method":"DELETE","path":"/v1/memories/<id>","status":204,"request_id":"<id>"}}
+```
+
+- `id` is stable: the stored operation's ID, matching
+  `^(hivemem|hiveskills|ardentstudio|embermend):audit:[A-Za-z0-9._:-]{1,200}$`.
+- `target` and `subject` are omitted when empty.
+- `outcome` is always `success`, because HiveMem records only completed operations.
+- `actor.type` is `service` for Oathweave service tokens (`id` is the Oathweave client,
+  `issuer` its issuer, `displayName` the local principal), `user` for administrators and linked
+  Oathweave users, and `agent` otherwise, including records written before this field existed.
+- `subject.actorId` is the HiveMem agent concerned: the credential's agent for
+  `actor_credential.*`, else an agent actor.
+- `details` is a flat list of scalars from an allowlist (`native_kind`, `workspace_id`, `method`,
+  `path`, `status`, `request_id`, `resolved`, `resolution`, `archived`, `operation_id`,
+  `token_generation`, `expires_at`, `previous_credential_valid_until`, `principal`), redacted with
+  the hive-common log redaction and at most 4 KB. Memory content, request bodies, tokens and
+  receipts are never included.
+
+Actions:
+
+| Stored kind | Action |
+|---|---|
+| `api.mutation` | `<resource>.<verb>` from the method and path: `create` (POST), `update` (PUT/PATCH), `delete` (DELETE), e.g. `memory.create`, `workspace.update`, `webhook.delete`; sub-resources become `<resource>.<sub>_<verb>` (`workspace.member_update`, `peer.card_delete`); queue jobs `queue_job.run`/`retry`/`cancel`. Named routes: `memory.batch_create`, `memory.promote`, `memory.privatize`, `memory.consolidate`, `memory.compact`, `memory.multimodal_create`, `memory.negotiate`, `memory.critic_review`, `memory.forgetting_review`, `lifecycle.forget_me`, `lifecycle.retention_apply`, `admin.prune`, `admin.purge`, `admin.test_data_cleanup`, `admin.backup`, `admin.restore`, `auth.token_issue`, `auth.revoke`, `auth.refresh`, `auth.renewal_grant_issue`, `agent.register`, `knowledge.source_sync`, `webhook.test`, `queue.run_next`, `actor_credential.request`, `actor_credential.receipt_ack` |
+| `tombstone` | `memory.tombstone` |
+| `conflict.resolve` | `conflict.resolve` |
+| `retention` | `lifecycle.retention_archive` |
+| `auth.renew` | `auth.renew` |
+| `actor-credential.enroll`/`rotate`/`renew`/`disable` | `actor_credential.enroll`/`rotate`/`renew`/`disable` |
+
+`GET /v1/admin/audit` is unchanged.
 
 `POST /v1/admin/workspaces/{workspace_id}/prune` applies workspace retention only with query `dry_run=false`; preview is the default. It archives eligible memories, not sessions. Unscoped prune is unavailable (501). Bounded permanent deletion of already archived memories is a separate admin `POST /v1/admin/purge` operation with explicit workspace, limit and `dry_run:false`.
 

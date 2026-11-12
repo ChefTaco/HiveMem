@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { actorCredentialSchema } from "./actor-credentials.js";
 import { memoryBrowserSchemas } from "./browser-memory-contracts.js";
+import { HiveAuditPageSchema, HiveAuditRecordSchema } from "./audit-export.js";
 
 // Owned browser contracts. Native clients retain their existing compatibility APIs.
 const jsonObject = z.record(z.string(), z.unknown());
@@ -218,6 +219,8 @@ const browserSchemas = {
   WorkspaceCreate: WorkspaceCreateSchema,
   WorkspaceMemberUpdate: WorkspaceMemberUpdateSchema,
   MemoryProfile: MemoryProfileSchema,
+  HiveAuditRecord: HiveAuditRecordSchema,
+  HiveAuditPage: HiveAuditPageSchema,
 };
 function browserOperation(
   summary: string,
@@ -343,6 +346,24 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
             "Acknowledge exact credential receipt; owner and admin:agents required",
           ),
           security: [{ bearerAuth: [] }],
+        },
+      },
+      "/v1/audit/export": {
+        get: {
+          ...browserOperation(
+            "Suite audit export (HiveAuditRecord v1), oldest first by (created_at, id); an administrator or an Oathweave service token with hivemem:audit:read",
+            "HiveAuditPage",
+          ),
+          parameters: [
+            { name: "after", in: "query", required: false, schema: { type: "string", maxLength: 512 }, description: "Opaque cursor from a previous page's nextCursor" },
+            { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 200, default: 100 } },
+          ],
+          responses: {
+            "200": browserOperation("Audit page", "HiveAuditPage").responses["200"],
+            "400": { description: "Malformed cursor or limit" },
+            "401": { description: "Authentication required" },
+            "403": { description: "Administrator or hivemem:audit:read service permission required" },
+          },
         },
       },
       "/v1/profile": {

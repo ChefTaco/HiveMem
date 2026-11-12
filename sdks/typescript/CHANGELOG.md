@@ -2,6 +2,14 @@
 
 All notable changes to `@hivemagnus/hivemem-sdk`.
 
+## [Unreleased]
+
+### Added
+
+- `exportAudit({ after, limit })` reads one page of `GET /v1/audit/export` and returns a
+  `HiveAuditPage` of `HiveAuditRecord` v1 records. New `HiveAuditRecord` and `HiveAuditPage`
+  types.
+
 ## [1.1.1] - 2026-11-12
 
 ### Fixed

@@ -61,6 +61,22 @@ manual rotation exists for this credential. Revoke it in Oathweave by deactivati
 the client or changing its secret; tokens already issued expire within their
 lifetime.
 
+### Audit export collectors
+
+A security collector reads the suite audit export, `GET /v1/audit/export`, with a service
+token that holds the Oathweave permission `hivemem:audit:read`. Link it with only that
+scope:
+
+```json
+[{"issuer":"oathweave-example","clientId":"example-collector","localId":"example-collector","scopes":["audit:read"]}]
+```
+
+Oathweave signs client-credentials tokens with its native issuer by default: put that
+identifier (its `JWT_ISSUER`, for example `hive-iam`) in the link's `issuer`, which passes it
+to the shared verifier's `nativeIssuers`. No separate setting is needed.
+`audit:read` is honoured only for service tokens: a HiveMem bearer token naming it is
+refused. It reaches no memory or admin route. Administrators may also read the export.
+
 ### Enrolling agents as a service
 
 A product that creates agents, such as a fleet manager, can enroll them with its service
