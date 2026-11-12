@@ -6891,7 +6891,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Read memory statistics; agent_id scopes every count to that agent's records"
+        "summary": "Read memory statistics; agent_id scopes every count to that agent's records (only that agent or an administrator)"
       }
     },
     "/v1/webhooks": {

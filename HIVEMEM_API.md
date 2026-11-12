@@ -1179,7 +1179,8 @@ GET /v1/stats
 
 Collection point counts. Requires agent auth. Optional `agent_id` query parameter
 (`^[a-z0-9_-]{2,32}$`) scopes every count to records that agent owns; the response shape is
-unchanged.
+unchanged. Only that agent or an administrator may scope by `agent_id`, because the counts
+include its private records; anyone else receives 403.
 
 ---
 

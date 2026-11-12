@@ -8,9 +8,10 @@ import { createHiveMemServer, signToken, type BrowseResponse, type MemoryRecord,
 
 const jwtSecret = "test_secret_32_bytes_or_more_xxxx";
 
-function token(agentId: string): string {
+function token(agentId: string, role?: string): string {
   return signToken(jwtSecret, {
     sub: agentId,
+    ...(role ? { role } : {}),
     scope: "memories:read memories:write sessions:read sessions:write",
     exp: Math.floor(Date.now() / 1000) + 3600,
   });
@@ -21,10 +22,10 @@ describe("agent_id filters", () => {
   let baseUrl: string;
   const ids: Record<string, string> = {};
 
-  async function call<T>(method: string, path: string, body?: unknown, agent = "agent-a"): Promise<{ status: number; body: T }> {
+  async function call<T>(method: string, path: string, body?: unknown, agent = "agent-a", role?: string): Promise<{ status: number; body: T }> {
     const init: RequestInit = {
       method,
-      headers: { authorization: `Bearer ${token(agent)}`, ...(body === undefined ? {} : { "content-type": "application/json" }) },
+      headers: { authorization: `Bearer ${token(agent, role)}`, ...(body === undefined ? {} : { "content-type": "application/json" }) },
     };
     if (body !== undefined) init.body = JSON.stringify(body);
     const response = await fetch(`${baseUrl}${path}`, init);
@@ -109,7 +110,8 @@ describe("agent_id filters", () => {
     assert.equal(all.status, 200);
     assert.equal(all.body.memories, 4);
     assert.equal(all.body.sessions, 1);
-    const bravo = await call<StatsResponse>("GET", "/v1/stats?agent_id=agent-b");
+    const bravo = await call<StatsResponse>("GET", "/v1/stats?agent_id=agent-b", undefined, "agent-b");
+    assert.equal(bravo.status, 200);
     assert.deepEqual(Object.keys(bravo.body).sort(), Object.keys(all.body).sort());
     assert.equal(bravo.body.memories, 2);
     assert.equal(bravo.body.sessions, 1);
@@ -117,7 +119,13 @@ describe("agent_id filters", () => {
     assert.equal(alpha.body.memories, 2);
     assert.equal(alpha.body.sessions, 0);
     assert.equal(alpha.body.webhooks, 0);
-    const invalid = await call<{ detail: string }>("GET", "/v1/stats?agent_id=-");
+    // Another agent's counts include its private records: only that agent or an administrator.
+    const foreign = await call<{ detail: string }>("GET", "/v1/stats?agent_id=agent-b");
+    assert.equal(foreign.status, 403);
+    const administered = await call<StatsResponse>("GET", "/v1/stats?agent_id=agent-b", undefined, "operator", "admin");
+    assert.equal(administered.status, 200);
+    assert.equal(administered.body.memories, 2);
+    const invalid = await call<{ detail: string }>("GET", "/v1/stats?agent_id=-", undefined, "operator", "admin");
     assert.equal(invalid.status, 422);
   });
 });

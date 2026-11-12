@@ -24,7 +24,8 @@
   is read for the request context.
 - `GET /v1/memories/browse` accepts an `agent_id` query parameter and `POST /v1/memories/search`
   an optional `agent_id` body field, returning only the caller's readable memories written by
-  that agent. `GET /v1/stats` accepts `agent_id` to scope every count to that agent's records.
+  that agent. `GET /v1/stats` accepts `agent_id` to scope every count to that agent's records;
+  only that agent or an administrator may use it.
   The value must match `^[a-z0-9_-]{2,32}$` (otherwise `422`); without it, responses are
   unchanged.
 

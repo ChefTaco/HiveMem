@@ -356,7 +356,7 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
       "/v1/health/ready": { get: operation("Readiness") },
       "/health/live": { get: operation("Suite liveness (hive-common)") },
       "/health/ready": { get: operation("Suite readiness with dependency checks (hive-common)") },
-      "/v1/stats": { get: { ...browserOperation("Read memory statistics; agent_id scopes every count to that agent's records", "MemoryStats"), parameters: [
+      "/v1/stats": { get: { ...browserOperation("Read memory statistics; agent_id scopes every count to that agent's records (only that agent or an administrator)", "MemoryStats"), parameters: [
         { name: "agent_id", in: "query", schema: { type: "string", pattern: "^[a-z0-9_-]{2,32}$" } },
       ] } },
       "/v1/auth/login": { post: operation("Token compatibility login") },
