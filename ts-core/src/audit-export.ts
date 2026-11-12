@@ -93,7 +93,8 @@ const RESOURCES: Readonly<Record<string, string>> = {
 const VERBS: Readonly<Record<string, string>> = { POST: "create", PUT: "update", PATCH: "update", DELETE: "delete" };
 
 function word(value: string): string {
-  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+  // Runs of other characters collapse to one "_", so at most one remains at either end.
+  const normalized = value.slice(0, 200).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_/, "").replace(/_$/, "").slice(0, 40);
   return /^[a-z]/.test(normalized) ? normalized : "x" + (normalized || "unknown");
 }
 
