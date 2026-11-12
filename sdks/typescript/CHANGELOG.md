@@ -2,6 +2,14 @@
 
 All notable changes to `@hivemagnus/hivemem-sdk`.
 
+## [1.1.1] - 2026-11-12
+
+### Fixed
+
+- An error response whose body is not JSON, such as a proxy's HTML 502, is reported with its
+  status and text. The body was read twice, and the second read failed with "Body is unusable".
+  An empty error body is reported as "HiveMem answered HTTP <status>".
+
 ## [1.1.0] - 2026-11-12
 
 ### Added
