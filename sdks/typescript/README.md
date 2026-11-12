@@ -136,6 +136,10 @@ const ok = await verifyHiveMemWebhook({
 });
 ```
 
+## Releasing
+
+Maintainers: see [RELEASING.md](https://github.com/ChefTaco/HiveMem/blob/main/sdks/typescript/RELEASING.md). In short, bump the version, push a tag `sdk-vX.Y.Z`, and approve the publish run.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
