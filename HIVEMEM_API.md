@@ -369,6 +369,7 @@ Deterministic local retrieval shared with the context API. The default path rank
 | `scope` | string | no | both | `"private"` or `"shared"` |
 | `type` | string | no | both | `"episodic"`, `"semantic"`, or `"procedural"` |
 | `agent_filter` | string | no | — | Filter by origin agent_id |
+| `agent_id` | string | no | — | Filter by origin agent_id; must match `^[a-z0-9_-]{2,32}$` (otherwise `422`) |
 | `from_self` | bool | no | — | `true`=own only, `false`=others only |
 | `tags` | string[] | no | — | Filter by tags (OR logic) |
 | `workspace_id` | string | no | `default` | Filter to a workspace. Send `null` or `"*"` to search all readable workspaces. |
@@ -532,7 +533,7 @@ Paginated browsing with filters (no semantic search).
 | --- | --- | --- | --- |
 | `scope` | string | both | `"private"` or `"shared"` |
 | `type` | string | both | `"episodic"`, `"semantic"`, or `"procedural"` |
-| `agent_id` | string | — | Filter by origin agent |
+| `agent_id` | string | — | Filter by origin agent (`^[a-z0-9_-]{2,32}$`; invalid values return `422`) |
 | `tags` | string[] | — | Filter by tags |
 | `workspace_id` | string | `default` | Filter to a workspace; use `*` for all readable workspaces |
 | `session_id` | string | — | Filter to memories associated with a session |
@@ -1176,7 +1177,9 @@ Returns Prometheus text metrics for request latency, embedding latency, Qdrant l
 GET /v1/stats
 ```
 
-Collection point counts. Requires agent auth.
+Collection point counts. Requires agent auth. Optional `agent_id` query parameter
+(`^[a-z0-9_-]{2,32}$`) scopes every count to records that agent owns; the response shape is
+unchanged.
 
 ---
 

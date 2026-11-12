@@ -22,6 +22,11 @@
 - Every response carries `x-request-id`, echoing a valid inbound `x-request-id`,
   `x-hive-request-id` or `x-correlation-id`, and server error logs name it. W3C `traceparent`
   is read for the request context.
+- `GET /v1/memories/browse` accepts an `agent_id` query parameter and `POST /v1/memories/search`
+  an optional `agent_id` body field, returning only the caller's readable memories written by
+  that agent. `GET /v1/stats` accepts `agent_id` to scope every count to that agent's records.
+  The value must match `^[a-z0-9_-]{2,32}$` (otherwise `422`); without it, responses are
+  unchanged.
 
 ## [1.4.2] - 2026-11-11
 

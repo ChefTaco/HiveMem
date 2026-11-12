@@ -410,6 +410,15 @@ function parseMemoryUpdate(body: unknown): MemoryUpdate {
   return update;
 }
 
+const agentIdPattern = /^[a-z0-9_-]{2,32}$/u;
+
+/** Optional agent filter: absent or empty means no filter; anything else must be an agent ID. */
+function parseAgentIdFilter(value: string | null | undefined, name: string): string | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  if (!agentIdPattern.test(value)) throw new ValidationError(name + " must match ^[a-z0-9_-]{2,32}$");
+  return value;
+}
+
 function parseSearchRequest(body: unknown): SearchRequest {
   const raw = asJsonObject(body, "search");
   const offset = optionalNumber(raw.offset, "offset") ?? 0;
@@ -429,6 +438,8 @@ function parseSearchRequest(body: unknown): SearchRequest {
   if (sessionId !== undefined) request.session_id = sessionId;
   const agentFilter = optionalString(raw.agent_filter, "agent_filter");
   if (agentFilter !== undefined) request.agent_filter = agentFilter;
+  const agentId = parseAgentIdFilter(optionalString(raw.agent_id, "agent_id"), "agent_id");
+  if (agentId !== undefined) request.agent_id = agentId;
   const fromSelf = optionalBoolean(raw.from_self, "from_self");
   if (fromSelf !== undefined) request.from_self = fromSelf;
   const minConfidence = optionalNumber(raw.min_confidence, "min_confidence");
@@ -1438,11 +1449,13 @@ export class InMemoryHiveMemStore {
     const scope = params.get("scope") as MemoryScope | null;
     const type = params.get("type") as MemoryType | null;
     const includeDeleted = params.get("include_deleted") === "true";
+    const agentId = parseAgentIdFilter(params.get("agent_id"), "agent_id");
     const memories = [...this.memories.values()]
       .filter((memory) => canRead(memory, principal))
       .filter((memory) => includeDeleted ? isAdmin(principal) : this.currentMemory(memory))
       .filter((memory) => workspaceId === "*" || memory.workspace_id === workspaceId)
       .filter((memory) => !sessionId || memory.session_id === sessionId)
+      .filter((memory) => !agentId || memory.agent_id === agentId)
       .filter((memory) => !scope || memory.scope === scope)
       .filter((memory) => !type || memory.type === type)
       .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
@@ -1472,6 +1485,7 @@ export class InMemoryHiveMemStore {
       .filter((memory) => !request.scope || memory.scope === request.scope)
       .filter((memory) => !request.type || memory.type === request.type)
       .filter((memory) => !request.agent_filter || memory.agent_id === request.agent_filter)
+      .filter((memory) => !request.agent_id || memory.agent_id === request.agent_id)
       .filter((memory) => request.from_self === undefined || (request.from_self ? memory.agent_id === principal.agentId : memory.agent_id !== principal.agentId))
       .filter((memory) => request.min_confidence === undefined || memory.confidence >= request.min_confidence)
       .filter((memory) => request.min_importance === undefined || memory.importance >= request.min_importance)
@@ -2427,18 +2441,21 @@ export class InMemoryHiveMemStore {
     return { embeddings: texts.map(simpleEmbedding), model: "hivemem-token-hash-v1", dimensions: 768 };
   }
 
-  stats(): StatsResponse {
+  /** Counts; with `agent_id`, each count is scoped to records that agent owns. */
+  stats(params?: URLSearchParams): StatsResponse {
+    const agentId = parseAgentIdFilter(params?.get("agent_id"), "agent_id");
+    const owned = (item: { owner_agent_id: string }): boolean => !agentId || item.owner_agent_id === agentId;
     return {
-      agents: this.agents.size,
-      memories: [...this.memories.values()].filter((item) => !item.deleted_at).length,
-      sessions: [...this.sessions.values()].filter((item) => !item.deleted_at).length,
-      workspaces: [...this.workspaces.values()].filter((item) => !item.deleted_at).length,
-      queue_jobs: this.queueJobs.size,
-      webhooks: [...this.webhooks.values()].filter((item) => !item.deleted_at).length,
-      webhook_deliveries: this.webhookDeliveries.size,
-      conclusions: [...this.conclusions.values()].filter((item) => !item.deleted_at).length,
-      episodes: [...this.episodes.values()].filter((item) => !item.deleted_at).length,
-      messages: [...this.messages.values()].filter((item) => !item.deleted_at).length,
+      agents: agentId ? (this.agents.has(agentId) ? 1 : 0) : this.agents.size,
+      memories: [...this.memories.values()].filter((item) => !item.deleted_at && (!agentId || item.agent_id === agentId)).length,
+      sessions: [...this.sessions.values()].filter((item) => !item.deleted_at && owned(item)).length,
+      workspaces: [...this.workspaces.values()].filter((item) => !item.deleted_at && owned(item)).length,
+      queue_jobs: agentId ? [...this.queueJobs.values()].filter(owned).length : this.queueJobs.size,
+      webhooks: [...this.webhooks.values()].filter((item) => !item.deleted_at && owned(item)).length,
+      webhook_deliveries: agentId ? [...this.webhookDeliveries.values()].filter(owned).length : this.webhookDeliveries.size,
+      conclusions: [...this.conclusions.values()].filter((item) => !item.deleted_at && owned(item)).length,
+      episodes: [...this.episodes.values()].filter((item) => !item.deleted_at && owned(item)).length,
+      messages: [...this.messages.values()].filter((item) => !item.deleted_at && owned(item)).length,
     };
   }
 

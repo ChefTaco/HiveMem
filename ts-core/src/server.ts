@@ -924,7 +924,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
         return;
       }
       if (method === "GET" && url.pathname === "/v1/stats") {
-        await sendJson(response, 200, store.stats());
+        await sendJson(response, 200, store.stats(url.searchParams));
         return;
       }
       if (method === "POST" && (url.pathname === "/v1/memories/search/text" || url.pathname === "/v1/memories/search/hybrid")) {
