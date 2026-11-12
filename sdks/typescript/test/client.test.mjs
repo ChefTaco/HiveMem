@@ -212,3 +212,26 @@ test("HiveMem refuses redirects and sends extra headers without overriding its o
   const staticHeaders = new HiveMem({ baseUrl: "https://hive.test", headers: { "x-hive-caller": "studio" }, fetchImpl: async (_url, init) => { assert.equal(init.headers.get("x-hive-caller"), "studio"); assert.equal(init.headers.get("authorization"), null); return json({}); } });
   await staticHeaders.health();
 });
+
+test("HiveMem keeps the status and text of a non-JSON error body", async () => {
+  const client = new HiveMem({
+    baseUrl: "https://hive.test",
+    token: "tok",
+    maxRetries: 0,
+    fetchImpl: async () => new Response("<html>Bad Gateway</html>", { status: 502, statusText: "Bad Gateway", headers: { "content-type": "text/html" } }),
+  });
+  await assert.rejects(client.health(), (error) => error.statusCode === 502 && error.message === "<html>Bad Gateway</html>" && error.details === undefined);
+});
+
+test("HiveMem reads the detail of a JSON error body and names the status of an empty one", async () => {
+  let body = JSON.stringify({ detail: "Workspace is archived" });
+  const client = new HiveMem({
+    baseUrl: "https://hive.test",
+    token: "tok",
+    maxRetries: 0,
+    fetchImpl: async () => new Response(body, { status: 409, statusText: "" }),
+  });
+  await assert.rejects(client.health(), (error) => error.statusCode === 409 && error.message === "Workspace is archived" && error.details.detail === "Workspace is archived");
+  body = "";
+  await assert.rejects(client.health(), (error) => error.statusCode === 409 && error.message === "HiveMem answered HTTP 409");
+});

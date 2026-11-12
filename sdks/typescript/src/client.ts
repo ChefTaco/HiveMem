@@ -104,12 +104,17 @@ export class HiveMem {
         if (!response.ok) {
           let details: unknown;
           let message = response.statusText;
+          // Read the body once: a proxy's HTML or plain-text error is not JSON, and a second
+          // read of the same body would fail and hide the status.
+          const text = await response.text().catch(() => "");
           try {
-            details = await response.json();
+            details = JSON.parse(text);
             if (details && typeof details === "object" && "detail" in details) message = String((details as { detail: unknown }).detail);
           } catch {
-            message = await response.text();
+            details = undefined;
+            if (text.trim()) message = text;
           }
+          if (!message) message = `HiveMem answered HTTP ${response.status}`;
           throw new HiveMemHTTPError(response.status, message, details);
         }
         if (response.status === 204) return undefined as T;
