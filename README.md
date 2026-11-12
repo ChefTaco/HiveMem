@@ -54,7 +54,7 @@ HiveMem 1.3.2.
 `@hivemagnus/hivemem-server` (the name the server source still uses) and the image
 `ghcr.io/cheftaco/hivemem-server` are the legacy 1.x line from the Hive repository:
 `npm install` and `npx` resolve that package to 1.2.2, not to this release. The
-[Hive README](https://github.com/ChefTaco/hive#legacy-npm-packages-1x) describes that line.
+[Hive README](https://github.com/ChefTaco/hive#the-retired-npm-packages) describes that line.
 The TypeScript client, [`@hivemagnus/hivemem-sdk`](sdks/typescript), is published on npm.
 
 **On its own.** Run the image with a Qdrant it can reach. This example keeps Qdrant on a
