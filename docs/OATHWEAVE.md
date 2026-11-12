@@ -41,7 +41,11 @@ service links; it needs `OATHWEAVE_JWKS_URL`:
 ```
 
 `issuer` is the Oathweave native `JWT_ISSUER` that signs client credentials tokens
-(not the browser issuer), and `clientId` is the machine client. A token is accepted
+(not the browser issuer), and `clientId` is the machine client. A native issuer is a
+lowercase identifier matching `^[a-z][a-z0-9-]{0,63}$`; a client whose machine policy
+selects the browser issuer is linked with that https issuer instead. Any other issuer
+shape is refused at startup. Service tokens use the same shared verifier and JWKS
+cache as browser tokens. A token is accepted
 only when it is signed by the configured JWKS, names exactly one linked issuer and
 client (`sub` and `clientId` agree), has the audience `hivemem`, is an access token
 of the `SERVICE_ACCOUNT` actor type without a user session, and lives at most fifteen

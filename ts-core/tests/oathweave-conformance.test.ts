@@ -7,7 +7,11 @@ import { createOathweaveServiceVerifier, createOathweaveVerifier } from "../src/
 test("HiveMem's Oathweave verifiers meet the shared conformance vectors", async () => {
   const report = await runOathweaveConformance((token, ctx) => {
     if (ctx.principal === "service") {
-      return createOathweaveServiceVerifier({ issuers: [ctx.issuer], audience: ctx.audience }, createLocalJWKSet(ctx.jwks), { now: () => ctx.nowMs })(token);
+      return createOathweaveServiceVerifier(
+        { issuers: [ctx.issuer, ...ctx.nativeIssuers], audience: ctx.audience },
+        createLocalJWKSet(ctx.jwks),
+        { now: () => ctx.nowMs },
+      )(token);
     }
     return createOathweaveVerifier(
       { issuer: ctx.issuer, audience: ctx.audience, jwksUrl: ctx.jwksUrl, userinfoUrl: ctx.userinfoUrl },
@@ -15,6 +19,8 @@ test("HiveMem's Oathweave verifiers meet the shared conformance vectors", async 
     )(token);
   });
   assert.equal(report.failed, 0);
+  for (const name of ["valid-native-service", "unconfigured-native-issuer", "native-service-lifetime-too-long"])
+    assert(report.results.some((result) => result.name === name && result.passed), name);
 });
 
 test("user-token refusals carry the shared reasons", async () => {

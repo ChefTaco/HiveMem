@@ -62,6 +62,19 @@ test("service verification accepts only short-lived, audience-bound client_crede
   assert.throws(() => createOathweaveServiceVerifier({ issuers: [], audience: "hivemem" }, keys));
 });
 
+test("service issuers are native identifiers or https URLs, and only linked ones are accepted", async () => {
+  const { keys, sign } = await keyring();
+  const browserIssuer = "https://identity.example.com";
+  const both = createOathweaveServiceVerifier({ issuers: [issuer, browserIssuer], audience: "hivemem" }, keys);
+  assert.equal((await both(await sign({}))).issuer, issuer);
+  assert.equal((await both(await sign({ iss: browserIssuer }))).issuer, browserIssuer);
+  const nativeOnly = createOathweaveServiceVerifier({ issuers: [issuer], audience: "hivemem" }, keys);
+  await assert.rejects(nativeOnly(await sign({ iss: browserIssuer })));
+  await assert.rejects(nativeOnly(await sign({ iss: "https://no-linked-issuer.invalid" })));
+  for (const unsupported of ["Hive-IAM", "http://identity.example.com", "hive_iam"])
+    assert.throws(() => createOathweaveServiceVerifier({ issuers: [unsupported], audience: "hivemem" }, keys), /https URL or a lowercase native identifier/u);
+});
+
 test("service links are explicit, unique and carry a scope ceiling", () => {
   const link = { issuer, clientId, localId: "fake-router", scopes: ["admin:all"] };
   assert.deepEqual(parseServiceLinks(JSON.stringify([link])), [link]);
