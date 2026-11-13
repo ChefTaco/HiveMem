@@ -475,7 +475,7 @@ Returns `404` if the memory doesn't exist, is soft-deleted, has passed its `expi
 PUT /v1/memories/{memory_id}
 ```
 
-Only the memory owner can update. All fields optional — only provided fields are changed. If `content` is updated, the server re-embeds automatically.
+Only the memory owner can update, and only with workspace write access where the memory lives. All fields optional — only provided fields are changed. If `content` is updated, the server re-embeds automatically.
 
 **Request body:**
 
@@ -487,7 +487,7 @@ Only the memory owner can update. All fields optional — only provided fields a
 | `importance` | float | New importance 0.0–1.0 |
 | `tags` | string[] | New tags |
 | `metadata` | object | Replace metadata |
-| `workspace_id` | string | Move the memory to a workspace |
+| `workspace_id` | string | Move the memory to a workspace (requires write access there too) |
 | `session_id` | string | Move or attach the memory to a session |
 | `expires_at` | datetime | New expiration |
 | `sensitivity` | string | New sensitivity label |
@@ -739,6 +739,8 @@ POST /v1/workspaces/{workspace_id}/schedule-dream
 Workspace metadata fields: `workspace_id`, `owner_agent_id`, `title`, `description`, `metadata`, `policy`, `members`, `created_at`, `updated_at`, and `deleted_at`. Membership roles are `viewer`, `member`, `admin`, and `owner`. Workspace read/write/admin checks are enforced for workspace-aware memory, search, context, session, webhook, and dream routes when a workspace metadata record exists; missing workspace records remain allowed for legacy ad-hoc namespaces.
 
 `policy` stores workspace-level `retention_days`, `allowed_scopes`, `reasoning_provider`, `consolidation_cadence_seconds`, `webhooks_enabled`, `sanitization`, and optional `agent_overrides` / `session_overrides`. `GET /settings` returns the effective cascade in workspace -> agent -> session order.
+
+The `default` workspace is open to every agent until it has a record; only an administrator can create that record (its creator becomes the owner and the workspace is then limited to its members). `*` is the all-workspaces wildcard and cannot be used as a workspace ID.
 
 `schedule-dream` queues server-side dream consolidation for `peer_id` (defaults to the caller), optional `session_id`, optional `observer_peer_id`, `include_peer_card`, `force`, and `reason`.
 
@@ -1174,7 +1176,7 @@ Returns agent metadata and memory counts. Available to any authenticated agent.
 GET /v1/agents/{agent_id}/profile
 ```
 
-Returns totals, shared/private counts, top tags, memory type/source distribution, first/last memory timestamps, and average confidence.
+Returns totals, shared/private counts, top tags, memory type/source distribution, first/last memory timestamps, and average confidence. For another agent's profile, these cover only the memories the caller can read; the agent itself and administrators get the full profile.
 
 ### Agent Profile Bundle
 
