@@ -21,6 +21,15 @@
 
 ### Fixed
 
+- A private memory written by an agent whose ID contains a character Qdrant refuses in a
+  collection name (`:` for example, which `issue-token --subject` and service links allow; also
+  `" * / < > ? \ |`) no longer stops the server. Before, the checkpoint could never complete:
+  every later request from every agent answered 503, and the server refused to start again
+  until `pending-write.json` was removed by hand. Such agents now use an encoded collection
+  name, `enc-<slug>-<hash>_private_<type>`; a pending checkpoint left by an earlier release is
+  replayed under the new name on the next start, so nothing has to be cleaned up. Collections of
+  all other agents keep their exact names. Agent IDs longer than 178 bytes, whose collections
+  could be created but not snapshotted, also move to an encoded name at the next checkpoint.
 - `POST /v1/chat` and `POST /v1/sessions/{id}/chat` now wait for the response checkpoint. A
   persistence failure while the answer was being sent was an unhandled rejection, which stops
   the server process; it is now a 503 for that request.
