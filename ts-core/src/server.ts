@@ -133,7 +133,9 @@ function cookieValue(request: IncomingMessage, name: string): string | undefined
   if (!raw) return undefined;
   for (const part of raw.split(";")) {
     const [key, ...valueParts] = part.trim().split("=");
-    if (key === name) return decodeURIComponent(valueParts.join("="));
+    if (key !== name) continue;
+    // A cookie that does not decode is not a credential; the caller is unauthenticated.
+    try { return decodeURIComponent(valueParts.join("=")); } catch { return undefined; }
   }
   return undefined;
 }
@@ -231,15 +233,24 @@ function requiredScope(method: string, pathname: string): string | null {
   return null;
 }
 
+/** Malformed percent-encoding is the caller's error (400), not a server fault. */
+function decodePathSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    throw Object.assign(new Error("Malformed percent-encoding in request path"), { status: 400 });
+  }
+}
+
 function pathId(pathname: string, prefix: string): string | undefined {
   if (!pathname.startsWith(prefix)) return undefined;
   const rest = pathname.slice(prefix.length);
   if (!rest || rest.includes("/")) return undefined;
-  return decodeURIComponent(rest);
+  return decodePathSegment(rest);
 }
 
 function pathParts(pathname: string): string[] {
-  return pathname.split("/").filter(Boolean).map((part) => decodeURIComponent(part));
+  return pathname.split("/").filter(Boolean).map(decodePathSegment);
 }
 
 function pagination(searchParams: URLSearchParams, defaultLimit: number, maxLimit: number): { offset: number; limit: number } {
@@ -1307,7 +1318,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
         const body = await readBody(request);
         const chat = store.chat(principal, body);
         if (wantsStream(body)) sendChatSse(response, chat);
-        else sendJson(response, 200, chat);
+        else await sendJson(response, 200, chat);
         return;
       }
       if (method === "POST" && url.pathname === "/v1/context") {
@@ -1353,7 +1364,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
         const body = await readBody(request);
         const chat = store.chat(principal, body, sessionChatId);
         if (wantsStream(body)) sendChatSse(response, chat);
-        else sendJson(response, 200, chat);
+        else await sendJson(response, 200, chat);
         return;
       }
       const sessionMemoriesId = url.pathname.endsWith("/memories") ? pathId(url.pathname.slice(0, -"/memories".length), "/v1/sessions/") : undefined;
