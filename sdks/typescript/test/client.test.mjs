@@ -242,3 +242,20 @@ test("HiveMem reads the detail of a JSON error body and names the status of an e
   body = "";
   await assert.rejects(client.health(), (error) => error.statusCode === 409 && error.message === "HiveMem answered HTTP 409");
 });
+
+test("HiveMem retries a 5xx response and releases the discarded response body", async () => {
+  const responses = [];
+  const client = new HiveMem({
+    baseUrl: "https://hive.test",
+    fetchImpl: async () => {
+      const response = responses.length === 0
+        ? new Response(JSON.stringify({ detail: "Internal server error" }), { status: 503 })
+        : new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+      responses.push(response);
+      return response;
+    },
+  });
+  assert.deepEqual(await client.health(), { status: "ok" });
+  assert.equal(responses.length, 2);
+  assert.equal(responses[0].body.locked || responses[0].bodyUsed, true, "the retried response body is cancelled, not left unread");
+});

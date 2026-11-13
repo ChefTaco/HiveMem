@@ -2,6 +2,13 @@
 
 All notable changes to `@hivemagnus/hivemem-sdk`.
 
+## [Unreleased]
+
+### Fixed
+
+- A 5xx response that is retried has its body cancelled, releasing the connection instead of
+  holding it until garbage collection.
+
 ## [1.2.0] - 2026-11-12
 
 ### Added
