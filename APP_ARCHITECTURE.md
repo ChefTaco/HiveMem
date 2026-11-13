@@ -80,6 +80,15 @@ Active memories live in Qdrant collections named by scope and type:
 - `shared_episodic`, `shared_semantic`, `shared_procedural`
 - `<agent>_private_episodic`, `<agent>_private_semantic`, `<agent>_private_procedural`
 
+`<agent>` is the agent ID itself. Qdrant refuses some characters in a collection name
+(`" * / : < > ? \ |` and control characters), and a collection snapshot fails for very long
+names, so an agent ID that contains one of them, or is longer than 178 bytes, is stored under
+`enc-<slug>-<hash>` instead: `<slug>` is the lowercased ID with other characters replaced by
+`-` (at most 40 characters) and `<hash>` is the first 32 hex digits of the SHA-256 of the ID.
+For example `svc:router` uses `enc-svc-router-15fa9bd708b0846572cb9ee283e0d6c3_private_semantic`.
+Every point carries its owner in the `agent_id` payload field, so the name is never decoded.
+All names are built in `ts-core/src/collection-names.ts`.
+
 Metadata and operational records live in underscore collections such as `_agents`,
 `_sessions`, `_episodes`, `_conclusions`, `_queue`, `_queue_archive`, `_workspaces`,
 `_webhooks` and `_webhook_deliveries`. Episode headers and messages share `_episodes`,

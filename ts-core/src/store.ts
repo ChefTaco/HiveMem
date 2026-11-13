@@ -4,6 +4,7 @@ import { signToken } from './auth.js';
 import { allowedPrivateWebhookHost, deliverWebhook, WebhookDeliveryError, type WebhookRequest } from "./webhook-transport.js";
 import { createHash, randomUUID } from "node:crypto";
 import { auditExportPage, HIVEMEM_AUDIT_KINDS, type HiveAuditRecord } from "./audit-export.js";
+import { memoryCollectionName, privateCollectionNames } from "./collection-names.js";
 import { deterministicEmbedding, type HiveMemPersistence, type HiveMemSnapshot, type PersistedAgentRecord } from "./persistence.js";
 import {
   DEFAULT_REASONING_SETTINGS,
@@ -2790,7 +2791,7 @@ export class InMemoryHiveMemStore {
       ['api.mutation', 'conflict.resolve', 'tombstone'].includes(String(entry.kind)) &&
       (entry.memory_id === id || typeof entry.path === 'string' && entry.path.split('/').at(-1) === encodeURIComponent(id))) : [];
     return {
-      memory, collection: memory.scope === 'shared' ? 'shared_' + memory.type : memory.agent_id + '_private_' + memory.type,
+      memory, collection: memoryCollectionName(memory),
       provenance: {
         confidence_provenance: memory.confidence_provenance, metadata: memory.metadata,
         embedding: { model: null, dimensions: null, status: 'stored-vector-identity-unreported', default_generator: 'hivemem-token-hash-v1', default_dimensions: 768 },
@@ -2982,7 +2983,7 @@ export class InMemoryHiveMemStore {
     return {
       agent_id: parsed.agent_id,
       token,
-      private_collections: [parsed.agent_id + "_private_episodic", parsed.agent_id + "_private_semantic", parsed.agent_id + "_private_procedural"],
+      private_collections: privateCollectionNames(parsed.agent_id),
       created_at: createdAt,
     };
   }
