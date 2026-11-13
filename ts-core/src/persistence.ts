@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { durableJson, removeDurableFile } from "./durable-file.js";
 import { createHash } from "node:crypto";
+import { agentIdFromCollectionName as agentIdFromCollection, isMemoryCollectionName as isMemoryCollection, memoryCollectionName as memoryCollection } from "./collection-names.js";
 import type {
   AgentInfo,
   ConclusionRecord,
@@ -70,7 +71,6 @@ const vectorDimensions = {
   metadata: 4,
 } as const;
 
-const sharedMemoryCollections = ["shared_episodic", "shared_semantic", "shared_procedural"] as const;
 const metadataCollections = {
   agents: "_agents",
   conclusions: "_conclusions",
@@ -123,14 +123,6 @@ function stablePointId(collection: string, recordId: string): string {
   return hex.slice(0, 8) + "-" + hex.slice(8, 12) + "-4" + hex.slice(13, 16) + "-" + ((Number.parseInt(hex.slice(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, "0") + hex.slice(18, 20) + "-" + hex.slice(20, 32);
 }
 
-function memoryCollection(memory: MemoryRecord): string {
-  return memory.scope === "shared" ? "shared_" + memory.type : memory.agent_id + "_private_" + memory.type;
-}
-
-function isMemoryCollection(collection: string): boolean {
-  return sharedMemoryCollections.includes(collection as (typeof sharedMemoryCollections)[number]) || /_private_(episodic|semantic|procedural)$/u.test(collection);
-}
-
 function point(collection: string, recordId: string, payload: JsonObject, vector: number[]): QdrantPoint {
   return { id: stablePointId(collection, recordId), vector, payload };
 }
@@ -151,11 +143,6 @@ function memoryTypeFromCollection(collection: string): MemoryRecord["type"] {
 
 function memoryScopeFromCollection(collection: string): MemoryRecord["scope"] {
   return collection.startsWith("shared_") ? "shared" : "private";
-}
-
-function agentIdFromCollection(collection: string): string {
-  if (collection.startsWith("shared_")) return "shared";
-  return collection.replace(/_private_(episodic|semantic|procedural)$/u, "") || "unknown";
 }
 
 function stringArray(value: JsonValue | undefined): string[] {

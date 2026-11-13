@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from "node:test";
@@ -65,6 +66,11 @@ async function startFakeQdrant(): Promise<FakeQdrant> {
         return;
       }
       if (request.method === "PUT" && parts.length === 2 && parts[0] === "collections") {
+        // Qdrant 1.18.3 answers 422 for these characters and for names over 255 characters.
+        if (/[\u0000\u001f"*/:<>?\\|]/u.test(parts[1]!) || parts[1]!.length > 255) {
+          send(response, 422, { status: { error: "Validation error in path parameters: [collection_name: collection name cannot contain a reserved char]" } });
+          return;
+        }
         collections.add(parts[1]!);
         if (!points.has(parts[1]!)) points.set(parts[1]!, new Map());
         send(response, 200, { result: true, status: "ok" });
@@ -271,4 +277,72 @@ it("replays a durable move journal after interruption while preserving original 
     assert.equal(recovered.memories.find((item) => item.id === record.id)!.scope, 'private');
     assert.deepEqual([...fake.points.get('agent-a_private_semantic')!.values()][0]!.vector, original.vector);
   } finally { await new Promise<void>((resolve) => fake.server.close(() => resolve())); rmSync(directory, { recursive: true, force: true }); }
+});
+
+describe("agent IDs Qdrant cannot use as a collection name", () => {
+  const colonAgent = "svc:router";
+  const encoded = "enc-svc-router-" + createHash("sha256").update(colonAgent).digest("hex").slice(0, 32) + "_private_semantic";
+
+  it("stores their private memories without blocking other agents, and restores them", async () => {
+    const fake = await startFakeQdrant();
+    try {
+      const persistence = new QdrantHiveMemPersistence({ url: fake.baseUrl });
+      const store = new InMemoryHiveMemStore({ snapshot: await persistence.load(), persistence });
+      const ordinary = store.createMemory(principal("table-runtime"), { content: "ordinary agent fixture", type: "semantic", scope: "private" });
+      const special = store.createMemory(principal(colonAgent), { content: "colon agent fixture", type: "semantic", scope: "private" });
+      await store.flushPersistence();
+      store.createMemory(principal("table-runtime"), { content: "a later write still checkpoints", type: "episodic", scope: "private" });
+      await store.flushPersistence();
+
+      assert.equal(fake.points.get("table-runtime_private_semantic")?.size, 1);
+      assert.equal(fake.points.get(encoded)?.size, 1);
+      assert.equal(store.describeMemory(principal(colonAgent), special.id).collection, encoded);
+      assert.equal(store.describeMemory(principal("table-runtime"), ordinary.id).collection, "table-runtime_private_semantic");
+
+      const restored = new InMemoryHiveMemStore({ snapshot: await new QdrantHiveMemPersistence({ url: fake.baseUrl }).load() });
+      const mine = restored.getMemory(principal(colonAgent), special.id);
+      assert.deepEqual([mine.agent_id, mine.scope, mine.content], [colonAgent, "private", "colon agent fixture"]);
+      assert.throws(() => restored.getMemory(principal("table-runtime"), special.id));
+    } finally { await new Promise<void>((resolve) => fake.server.close(() => resolve())); }
+  });
+
+  it("replays the pending journal a refused collection name left behind", async () => {
+    const fake = await startFakeQdrant(); const directory = mkdtempSync(join(tmpdir(), "hivemem-journal-"));
+    try {
+      const journalPath = join(directory, "pending.json");
+      // The checkpoint an earlier release could never finish: the owner's ID was the collection name.
+      const stuck = new InMemoryHiveMemStore();
+      const ordinary = stuck.createMemory(principal("table-runtime"), { content: "ordinary agent fixture", type: "semantic", scope: "private" });
+      const special = stuck.createMemory(principal(colonAgent), { content: "colon agent fixture", type: "semantic", scope: "private" });
+      writeFileSync(journalPath, JSON.stringify({ snapshot: stuck.snapshot(), vectors: [] }));
+
+      const recovered = await new QdrantHiveMemPersistence({ url: fake.baseUrl, journalPath }).load();
+      assert.deepEqual(recovered.memories.map((item) => item.id).sort(), [ordinary.id, special.id].sort());
+      assert.equal(existsSync(journalPath), false);
+      assert.equal(fake.points.get(encoded)?.size, 1);
+      assert.equal([...fake.collections].some((name) => name.includes(":")), false);
+    } finally { await new Promise<void>((resolve) => fake.server.close(() => resolve())); rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it("moves memories out of a verbatim collection too long to snapshot", async () => {
+    const fake = await startFakeQdrant();
+    try {
+      const longAgent = "a".repeat(200);
+      const legacy = longAgent + "_private_semantic";
+      fake.collections.add(legacy);
+      fake.points.set(legacy, new Map([["11111111-1111-4111-8111-111111111111", { id: "11111111-1111-4111-8111-111111111111", vector: Array<number>(768).fill(0.25), payload: { id: "long-1", content: "long agent fixture", type: "semantic", scope: "private", agent_id: longAgent, workspace_id: "default", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" } }]]));
+      const persistence = new QdrantHiveMemPersistence({ url: fake.baseUrl });
+      const store = new InMemoryHiveMemStore({ snapshot: await persistence.load(), persistence });
+      store.createMemory(principal("table-runtime"), { content: "any checkpoint", type: "semantic", scope: "private" });
+      await store.flushPersistence();
+
+      const target = [...fake.collections].find((name) => name.startsWith("enc-") && name.endsWith("_private_semantic"));
+      assert.ok(target);
+      assert.equal(fake.points.get(legacy)?.size, 0);
+      const moved = [...fake.points.get(target)!.values()];
+      assert.deepEqual(moved.map((item) => [item.payload.id, item.payload.agent_id, item.vector[0]]), [["long-1", longAgent, 0.25]]);
+      const again = await new QdrantHiveMemPersistence({ url: fake.baseUrl }).load();
+      assert.equal(again.memories.filter((item) => item.id === "long-1").length, 1);
+    } finally { await new Promise<void>((resolve) => fake.server.close(() => resolve())); }
+  });
 });
