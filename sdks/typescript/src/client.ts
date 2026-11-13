@@ -101,7 +101,11 @@ export class HiveMem {
             continue;
           }
         }
-        if (response.status >= 500 && attempt < this.maxRetries) continue;
+        if (response.status >= 500 && attempt < this.maxRetries) {
+          // Release the connection: an unread body keeps it checked out until garbage collection.
+          await response.body?.cancel().catch(() => undefined);
+          continue;
+        }
         if (!response.ok) {
           let details: unknown;
           let message = response.statusText;

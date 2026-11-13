@@ -1334,6 +1334,9 @@ export class InMemoryHiveMemStore {
     if (!Array.isArray(raw.memories) || raw.memories.length === 0) {
       throw new ValidationError("memories must be a non-empty array");
     }
+    // Check every item before storing any: a rejected batch must not leave its first items behind
+    // for the caller's corrected retry to duplicate.
+    for (const memory of raw.memories) this.assertWorkspacePermission(principal, parseMemoryCreate(memory).workspace_id ?? "default", "write");
     return raw.memories.map((memory) => this.createMemory(principal, memory));
   }
 
@@ -1433,6 +1436,10 @@ export class InMemoryHiveMemStore {
     const memory = this.getMemory(principal, id);
     assertCanWrite(memory, principal);
     const update = parseMemoryUpdate(body);
+    // As with sessions and webhooks: changing a record needs write access where it lives, and
+    // moving it needs write access to (and a token that permits) the destination workspace.
+    this.assertWorkspacePermission(principal, memory.workspace_id, "write");
+    if (update.workspace_id !== undefined && update.workspace_id !== memory.workspace_id) this.assertWorkspacePermission(principal, update.workspace_id, "write");
     const updated: MemoryRecord = {
       ...memory,
       ...update,
@@ -1750,7 +1757,7 @@ export class InMemoryHiveMemStore {
     types: typeof memoryTypes;
     sources: typeof memorySources;
   } {
-    const visible = [...this.memories.values()].filter((memory) => this.currentMemory(memory) && canRead(memory, principal));
+    const visible = [...this.memories.values()].filter((memory) => this.currentMemory(memory) && canRead(memory, principal) && this.canReadWorkspace(principal, memory.workspace_id));
     const agentIds = new Set<string>([principal.agentId]);
     const tags = new Set<string>();
     for (const memory of visible) {
@@ -3013,7 +3020,11 @@ export class InMemoryHiveMemStore {
 
   agentProfile(principal: AuthPrincipal, agentId: string): AgentProfile {
     const agent = this.getAgent(principal, agentId);
-    const memories = [...this.memories.values()].filter((memory) => memory.agent_id === agentId && this.currentMemory(memory));
+    // The agent itself and administrators see the whole profile. Anyone else sees a profile of
+    // the memories they can already read, so private tags and closed workspaces stay hidden.
+    const full = isAdmin(principal) || principal.agentId === agentId;
+    const memories = [...this.memories.values()].filter((memory) => memory.agent_id === agentId && this.currentMemory(memory)
+      && canRead(memory, principal) && (full || this.canReadWorkspace(principal, memory.workspace_id)));
     const topTags = new Map<string, number>();
     const memoryTypes: Record<string, number> = {};
     const sources: Record<string, number> = {};
@@ -3163,7 +3174,11 @@ export class InMemoryHiveMemStore {
   createWorkspace(principal: AuthPrincipal, body: unknown): WorkspaceRecord {
     const parsed = parseWorkspaceCreate(body);
     if (Array.isArray(principal.rawClaims.workspace_ids) && !principal.rawClaims.workspace_ids.includes(parsed.workspace_id)) throw new ForbiddenError("Token does not permit this workspace");
+    if (parsed.workspace_id === "*") throw new ValidationError("workspace_id * is the all-workspaces wildcard and cannot name a workspace");
     const existing = this.workspaces.get(parsed.workspace_id);
+    // Without a record the default workspace is open to every agent. Whoever creates the record
+    // becomes its owner and closes it to non-members, so only an administrator may do that.
+    if (!existing && parsed.workspace_id === "default" && !isAdmin(principal)) throw new ForbiddenError("Only an administrator can create the default workspace");
     if (existing?.deleted_at) throw new ConflictError("Workspace ID is archived and reserved; its owner must restore it or choose a new ID");
     if (existing && !existing.deleted_at) {
       this.assertWorkspacePermission(principal, parsed.workspace_id, "read");

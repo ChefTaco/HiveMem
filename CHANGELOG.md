@@ -1,5 +1,36 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+
+- `PUT /v1/memories/{id}` now requires workspace write access where the memory lives and, when
+  `workspace_id` changes, in the destination workspace. Before, an agent could move its own
+  memory into a workspace it could not write to (or out of the workspaces its token is bound
+  to), and a member demoted to viewer could still edit content. Sessions and webhooks already
+  applied this rule.
+- Only an administrator can create the `default` workspace record. Without a record the default
+  workspace is open to every agent; before, any agent holding `workspaces:write` could create
+  the record, become its owner and close the workspace to everyone else. An existing `default`
+  record is unaffected. `*` is refused as a workspace ID.
+- `GET /v1/agents/{id}/profile` for another agent now summarises only the memories the caller
+  can read. Before, its counts and top tags included that agent's private memories and closed
+  workspaces. The agent itself and administrators still see the full profile.
+- `GET /dashboard/api/memory-options` lists agents and tags only from workspaces the caller can
+  read.
+
+### Fixed
+
+- `POST /v1/chat` and `POST /v1/sessions/{id}/chat` now wait for the response checkpoint. A
+  persistence failure while the answer was being sent was an unhandled rejection, which stops
+  the server process; it is now a 503 for that request.
+- `POST /v1/memories/batch` validates every item and its workspace before storing any, so a
+  rejected batch no longer leaves its first items behind to be duplicated by the retry.
+- A request path with malformed percent-encoding answers 400 instead of 500, and an undecodable
+  dashboard cookie is treated as no credential (401).
+- TypeScript SDK: a 5xx response that is retried has its body cancelled, releasing the
+  connection instead of holding it until garbage collection.
+
 ## [1.6.0] - 2026-11-12
 
 ### Added
