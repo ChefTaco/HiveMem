@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
+import { readBodyBounded } from '@hivemagnus/hive-common/fetch';
 import type { MemoryRecord } from './types.js';
+/** Largest embedding or Qdrant response the semantic index reads. */
+const SEMANTIC_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 export interface SemanticConfig { endpoint: string; model: string; revision: string; dimensions: number; collection: string; qdrantUrl: string; apiKey?: string; embeddingKey?: string }
 export function semanticConfig(env = process.env): SemanticConfig | null {
   if (!env.HIVEMEM_EMBEDDING_ENDPOINT) return null;
@@ -17,11 +20,10 @@ export class SemanticIndex {
   private async json(url: string, method: string, body?: unknown, headers?: Record<string, string>): Promise<Record<string, any>> {
     const response = await this.transport(url, { method, headers: { 'content-type': 'application/json', ...headers }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30_000), redirect: 'error' });
     if (!response.ok) throw new Error(`Semantic dependency returned HTTP ${response.status}`);
-    const reader = response.body?.getReader(); if (!reader) throw new Error('Semantic dependency returned no body');
-    const chunks: Uint8Array[] = []; let size = 0;
-    try { for (;;) { const part = await reader.read(); if (part.done) break; size += part.value.length; if (size > 8 * 1024 * 1024) throw new Error('Semantic response exceeds limit'); chunks.push(part.value); } }
-    finally { await reader.cancel(); }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, any>;
+    if (!response.body) throw new Error('Semantic dependency returned no body');
+    // At most 8 MiB, refused up front when the declared length is larger.
+    const bytes = await readBodyBounded(response, SEMANTIC_MAX_RESPONSE_BYTES);
+    return JSON.parse(Buffer.from(bytes).toString('utf8')) as Record<string, any>;
   }
   private qdrant(method: string, suffix: string, body?: unknown) { return this.json(`${this.config.qdrantUrl.replace(/\/$/, '')}/collections/${this.config.collection}${suffix}`, method, body, this.config.apiKey ? { 'api-key': this.config.apiKey } : {}); }
   async embed(texts: string[]): Promise<number[][]> {
