@@ -5,7 +5,6 @@ const releaseMetadata = () => metadata(findPackageRoot(import.meta.url, '@hivema
 import type { JsonValue } from "./types.js";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { configuredOathweaveServiceVerifier, configuredOathweaveVerifier, type OathweaveIdentity, type OathweaveServiceIdentity } from "./identity.js";
-import { timingSafeEqual } from "node:crypto";
 import { AuthError, isUsableSigningSecret, MAX_TOKEN_LINEAGE, parentTokenIds, signToken, verifyBearerToken } from "./auth.js";
 import { DEFAULT_AGENT_SCOPES } from "./issue-token.js";
 import { InMemoryHiveMemStore } from "./store.js";
@@ -16,6 +15,8 @@ import { memoryOperations } from './operations.js';
 import { HIVEMEM_AUDIT_EXPORT_PATH, HIVEMEM_AUDIT_READ_PERMISSION, HIVEMEM_AUDIT_READ_SCOPE } from "./audit-export.js";
 import { createHealth } from "@hivemagnus/hive-common/health";
 import { createRequestContext, runWithRequestContext } from "@hivemagnus/hive-common/context";
+import { readBody as readSharedBody } from "@hivemagnus/hive-common/node-http";
+import { timingSafeEqualString } from "@hivemagnus/hive-common/secrets";
 
 export interface HiveMemServerOptions {
   jwtSecret?: string;
@@ -46,6 +47,11 @@ function unverifiedJwtPart(token: string, index: number): Record<string, unknown
 
 class PayloadTooLargeError extends Error {
   readonly status = 413;
+}
+
+/** The client went away before its request body was complete. */
+class RequestAbortedError extends Error {
+  readonly status = 400;
 }
 
 const resourcePrincipals = new WeakMap<IncomingMessage, AuthPrincipal>();
@@ -95,24 +101,17 @@ function sendText(response: ServerResponse, status: number, contentType: string,
 
 async function readBody(request: IncomingMessage, maxBodyBytes = Number.parseInt(process.env.HIVEMEM_MAX_BODY_BYTES ?? "1048576", 10)): Promise<unknown> {
   const configuredLimit = (request as IncomingMessage & { hiveMaxBodyBytes?: number }).hiveMaxBodyBytes ?? maxBodyBytes;
-  const declaredLength = Number.parseInt(request.headers["content-length"] ?? "0", 10);
-  if (Number.isFinite(declaredLength) && declaredLength > configuredLimit) {
-    request.resume();
-    throw new PayloadTooLargeError(`Request body exceeds ${configuredLimit} bytes`);
-  }
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for await (const chunk of request) {
-    const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
-    total += buffer.length;
-    if (total > configuredLimit) {
-      request.resume();
-      throw new PayloadTooLargeError(`Request body exceeds ${configuredLimit} bytes`);
-    }
-    chunks.push(buffer);
-  }
-  if (chunks.length === 0) return {};
-  const raw = Buffer.concat(chunks).toString("utf8");
+  // The shared reader enforces the limit while streaming and, past it, answers first and then
+  // discards the rest of the upload for a bounded time. Parsing stays HiveMem's own: no
+  // content-type check, and an empty or whitespace-only body is {}.
+  const bytes = await readSharedBody(request, {
+    maxBytes: configuredLimit,
+    errorFor: (problem) => problem === "too_large"
+      ? new PayloadTooLargeError(`Request body exceeds ${configuredLimit} bytes`)
+      : new RequestAbortedError("The request body was not received"),
+  });
+  if (bytes.length === 0) return {};
+  const raw = bytes.toString("utf8");
   if (!raw.trim()) return {};
   try {
     return JSON.parse(raw) as unknown;
@@ -175,11 +174,7 @@ function authorizeMetrics(
   const header = Array.isArray(request.headers.authorization) ? request.headers.authorization[0] : request.headers.authorization;
   if (!header?.startsWith("Bearer ")) throw new AuthError(401, "Missing bearer token");
   const supplied = header.slice("Bearer ".length).trim();
-  if (options.metricsToken) {
-    const expected = Buffer.from(options.metricsToken);
-    const actual = Buffer.from(supplied);
-    if (expected.length === actual.length && timingSafeEqual(expected, actual)) return;
-  }
+  if (options.metricsToken && timingSafeEqualString(supplied, options.metricsToken)) return;
   const principal = auth(request, options.jwtSecret, options.isRevoked, options.store);
   if (!isAdminPrincipal(principal)) throw new AuthError(403, "Admin role or metrics token required");
 }

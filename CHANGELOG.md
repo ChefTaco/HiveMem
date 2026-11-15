@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- The server uses `@hivemagnus/hive-common` 0.5.0 (was 0.3.0). What this changes in HiveMem:
+  audit export `details` text is scrubbed with the faster redaction, which also masks URL
+  credentials that have only a user or only a password; Oathweave verifier settings are read
+  once and checked at startup; health check names are checked at startup. Tokens, routes,
+  responses and the error bodies are unchanged.
+
+### Fixed
+
+- Request bodies are read with the shared bounded reader. `HIVEMEM_MAX_BODY_BYTES`, the 413 and
+  its message, the empty-body rule (`{}`) and the 400 for invalid JSON are unchanged. The rest of
+  an upload over the limit is now discarded for up to 5 s after the 413 instead of the
+  connection being reset while the client is still sending, and a client that disconnects
+  before its body is complete gets a 400 instead of being logged as an internal error (500).
+- The `HIVEMEM_METRICS_TOKEN` comparison and the semantic index's 8 MiB response limit use the
+  shared helpers (`timingSafeEqualString()`, `readBodyBounded()`). A semantic dependency
+  response whose `content-length` is over the limit is now refused before it is read.
+
 ## [1.7.0] - 2026-11-13
 
 ### Security
