@@ -1,4 +1,4 @@
-# Direct console workflows
+# Direct UI workflows
 
 HiveXUI uses the same bearer-authorized product API as native clients. Browser
 contracts are owned by HiveMem and exported in `docs/openapi.json`; no dashboard

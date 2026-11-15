@@ -12,7 +12,7 @@ Report them privately through
 [GitHub private vulnerability reporting](https://github.com/ChefTaco/HiveMem/security/advisories/new).
 Please include:
 
-- the affected component (Router, IAM, HiveMem, Skills, or an SDK) and version or commit
+- the affected component (server, TypeScript or Python SDK, or Hermes plugin) and version or commit
 - steps to reproduce, or a proof of concept
 - the impact you expect
 
@@ -23,4 +23,5 @@ advisory will credit you unless you ask not to be named.
 
 - Run every service over TLS in production, and keep admin listeners on a private network.
 - Keep `.env` files, IAM signing keys, and TLS keys readable only by root or the service user.
-- Rotate secrets with `npm run rotate:secrets` (see [docs/SECRET_ROTATION.md](docs/SECRET_ROTATION.md)).
+- Rotating `HIVEMEM_JWT_SECRET` invalidates every token at once; see [ts-core/README.md](ts-core/README.md)
+  for token issuance, refresh and revocation.

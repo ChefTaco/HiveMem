@@ -438,7 +438,7 @@ Identity is `(workspace_id, project_id, source_id, chunk_key)`. An unchanged has
 Preview performs all validation and calculates the exact create/supersede/retire counts without mutating state. Apply requests are fully parsed and hash-checked before the first write. The repository CLI is preview-first:
 
 ```bash
-python3 services/hive-mem/scripts/sync_project_knowledge.py \
+python3 scripts/sync_project_knowledge.py \
   --root /path/to/repository \
   --include 'docs/**/*.md' \
   --project-id example-project \
