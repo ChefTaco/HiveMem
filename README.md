@@ -34,12 +34,12 @@ The production runtime is the strict TypeScript core in [`ts-core/`](ts-core), b
 - **Async reasoning queue.** Memory writes enqueue summary, peer-card, representation, conflict-scan, consolidation, dream, sleep, and forgetting-review jobs to a Qdrant-backed queue with token-threshold batching, cooldown awareness, worker heartbeats, stale-lock recovery, and retention/archive summaries.
 - **Operational telemetry and governance.** Consolidation cron runs and cursors persist separately from queue jobs; `/metrics` exposes request, embedding, Qdrant, queue, consolidation, and webhook metrics; authenticated health reports versions and subsystem readiness; admin audit APIs query memory write history, and workspace export/import supports staging hydration without webhook secrets.
 - **Webhooks.** REST-managed endpoints with timestamped HMAC signatures and delivery nonces cover `memory.created`, `session.created`, `summary.updated`, `peer_card.updated`, `conflict.detected`, `queue.empty`, and `webhook.test`.
-- **Operator and agent surfaces.** Python/TypeScript SDKs, REST helper scripts, the Hermes Agent memory-provider plugin, and the memory pages of the [HiveXUI](https://github.com/ChefTaco/HiveXUI) console all use the REST API.
+- **Operator and agent surfaces.** Python/TypeScript SDKs, REST helper scripts, the Hermes Agent memory-provider plugin, and the memory pages of [HiveXUI](https://github.com/ChefTaco/HiveXUI), the suite UI, all use the REST API.
 - **Compatibility tests.** The TypeScript core uses deterministic node:test coverage for REST compatibility, Qdrant hydration, reasoning, dashboard compatibility routes, and the Hermes plugin contract.
 
 ## Install
 
-HiveMem 1.4 ships only as a container image, `ghcr.io/cheftaco/hivemem`, for `linux/amd64`
+Since 1.3, HiveMem ships only as a container image, `ghcr.io/cheftaco/hivemem`, for `linux/amd64`
 and `linux/arm64`. Each release is tagged with its exact version (for example `1.7.0`; there
 is no `latest` tag), and its [GitHub release](https://github.com/ChefTaco/HiveMem/releases)
 records the image digest.
@@ -47,10 +47,10 @@ records the image digest.
 **With the Hive suite.** HiveMem is normally installed by `hive.sh`, the
 [Hive suite controller](https://github.com/ChefTaco/hive#install-the-suite), in both the
 `core` and `full` profiles. The controller pins the image by digest from a signed release
-manifest, writes its configuration and secrets, and runs its private Qdrant. Hive 2.0.6 pins
-HiveMem 1.3.2.
+manifest, writes its configuration and secrets, and runs its private Qdrant. Hive 3.9.1 pins
+HiveMem 1.7.0.
 
-**Legacy npm packages.** HiveMem 1.4 is not published on npm. The npm package
+**Legacy npm packages.** HiveMem 1.3 and later are not published on npm. The npm package
 `@hivemagnus/hivemem-server` (the name the server source still uses) and the image
 `ghcr.io/cheftaco/hivemem-server` are the legacy 1.x line from the Hive repository:
 `npm install` and `npx` resolve that package to 1.2.2, not to this release. The
@@ -184,7 +184,7 @@ Integration tests use a deterministic in-process embedder when the configured GG
 
 For remote integration testing against a separate host, do not expose Qdrant directly. Run the tests on the HiveMem host, use an SSH tunnel or VPN/firewall rule that restricts Qdrant access to trusted clients, or point tests at the HiveMem API where applicable.
 
-## SDKs, Console, and Integrations
+## SDKs, UI, and Integrations
 
 HiveMem ships several first-party integration surfaces, all backed by the same REST API:
 
@@ -204,7 +204,7 @@ curl "$HIVEMEM_API_URL/v1/memories/search" \
   -d '{"query":"what do we know about qdrant backups?","workspace_id":"default","limit":5}'
 ```
 
-HiveMem has no dashboard of its own. In the Hive:Magnus suite, [HiveXUI](https://github.com/ChefTaco/HiveXUI) is the browser console for memories, workspaces and operations such as sessions, webhooks, the graph, conflicts, consolidation and the queue. It is deployed by the [Hive installer](https://github.com/ChefTaco/hive). HiveMem keeps its own API and still runs on its own, through that API. `GET /dashboard` now returns only a placeholder page; the `/dashboard/login` and `/dashboard/api/*` compatibility routes remain for existing callers.
+HiveMem has no dashboard of its own. In the Hive:Magnus suite, [HiveXUI](https://github.com/ChefTaco/HiveXUI) is the browser UI for memories, workspaces and operations such as sessions, webhooks, the graph, conflicts, consolidation and the queue. It is deployed by the [Hive installer](https://github.com/ChefTaco/hive). HiveMem keeps its own API and still runs on its own, through that API. `GET /dashboard` now returns only a placeholder page; the `/dashboard/login` and `/dashboard/api/*` compatibility routes remain for existing callers.
 
 ## Register an Agent
 

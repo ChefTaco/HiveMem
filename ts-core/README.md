@@ -3,13 +3,13 @@
 HiveMem is a self-hosted shared memory server for AI agents. Agents store and recall episodic,
 semantic, and procedural memories over a REST API, with workspace and per-agent isolation, HS256
 JWT auth, lexical and optional semantic search, citation-backed chat and context packages, a
-reasoning queue and webhooks. HiveXUI is its browser console. Data lives in
+reasoning queue and webhooks. HiveXUI is its browser UI. Data lives in
 [Qdrant](https://qdrant.tech).
 
 This directory is the server. Clients use the REST API directly or the
 [`@hivemagnus/hivemem-sdk`](https://www.npmjs.com/package/@hivemagnus/hivemem-sdk) TypeScript SDK.
 
-> **How it is released.** HiveMem 1.3 ships only as the container image
+> **How it is released.** Since 1.3, HiveMem ships only as the container image
 > `ghcr.io/cheftaco/hivemem`, normally installed with the rest of the suite by `hive.sh`, the
 > [Hive suite controller](https://github.com/ChefTaco/hive#install-the-suite). It is not
 > published on npm: `npm install` and `npx` for `@hivemagnus/hivemem-server`, this package's
@@ -194,7 +194,10 @@ Apache-2.0
 
 ## Managed upgrades
 
-Use `hive upgrade --dry-run`, then `hive upgrade` for the enrolled release bundle. This server's
+A Hive suite installation upgrades HiveMem with the suite controller (`./hive.sh upgrade`; see
+the [Hive README](https://github.com/ChefTaco/hive#upgrading)). The rest of this section is for
+installations enrolled with the retired npm `hive` launcher: use `hive upgrade --dry-run`, then
+`hive upgrade` for the enrolled release bundle. This server's
 `upgrade` and `rollback` commands delegate to the same owner-run launcher. `migrate --plan --json`
 is read-only; migration requires a verified backup. Set `HIVE_AUTO_MIGRATE=true` explicitly for
 startup migrations outside a managed install. Slow or one-way automatic migrations are refused.

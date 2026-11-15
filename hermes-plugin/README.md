@@ -130,7 +130,7 @@ pytest hermes-plugin/tests -v
 Most tests use a local fake HiveMem HTTP server. The TypeScript migration compatibility test builds `ts-core`, launches it on an ephemeral localhost port, mints a short-lived test JWT, and runs the real Python plugin tool flow against it:
 
 ```bash
-npm run test:memory-hermes-dual-stack
+npm run test:hermes-dual-stack
 ```
 
 Tests marked `hermes` also import real Hermes classes when Hermes Agent is installed or `HERMES_AGENT_ROOT`/`PYTHONPATH` points to a checkout:

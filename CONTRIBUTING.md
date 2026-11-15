@@ -1,25 +1,23 @@
-# Contributing to Hive
+# Contributing to HiveMem
 
-Thanks for your interest in improving Hive! Bug reports, documentation fixes, and pull requests are
-all welcome.
+Thanks for your interest in improving HiveMem! Bug reports, documentation fixes, and pull
+requests are all welcome.
 
 ## Getting set up
 
 ```bash
-nvm use               # Node.js version from .nvmrc
-npm run bootstrap     # install every workspace and the git hooks
-npm run dev:hive      # run the full stack locally
+# Node.js 24.22.3+ or 26.13.1+
+npm run bootstrap     # install ts-core, the TypeScript SDK and release tooling, and the git hooks
+npm run build         # build ts-core and the TypeScript SDK
 ```
 
-The repository is a monorepo of independently locked workspaces:
-
-| Path | Workspace |
+| Path | Contents |
 |---|---|
-| `services/hive-router` | Model gateway and Hive console |
-| `services/hive-iam` | IAM service and `@hivemagnus/hive-iam-sdk` |
-| `services/hive-mem` | HiveMem core, SDKs, and Hermes plugin |
-| `services/hive-skills` | Skills registry |
-| `packages/hive` | The `hive` launcher (`@hivemagnus/hive`) |
+| `ts-core` | The HiveMem server (`hivemem-server`) |
+| `sdks/typescript` | `@hivemagnus/hivemem-sdk` |
+| `sdks/python` | Python REST client |
+| `hermes-plugin` | Hermes Agent memory-provider plugin |
+| `tooling/release` | Release and migration runtime vendored into `ts-core` |
 
 ## Before opening a pull request
 
@@ -27,6 +25,7 @@ Run the same gates that CI runs:
 
 ```bash
 npm run typecheck
+npm run build
 npm test
 npm run check:openapi
 npm run scan:secrets
@@ -37,7 +36,6 @@ npm run check:private
 - Add or update tests for behaviour changes.
 - If you change an HTTP route or schema, run `npm run generate:openapi` and commit the updated
   snapshot.
-- If you change IAM request schemas, run `npm --prefix services/hive-router run contracts:generate`.
 - Never commit `.env` files, keys, certificates, databases, or other credentials, or details of
   private infrastructure (real hostnames, IPs, usernames, home paths). The git hooks in `.githooks/`
   enforce this. See [AGENTS.md](AGENTS.md) for the full rules, which apply to people and AI agents
@@ -46,7 +44,7 @@ npm run check:private
 ## Commit messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`,
-`chore:` and so on), with an optional scope such as `fix(router): ...`.
+`chore:` and so on), with an optional scope such as `fix(ts-core): ...`.
 
 ## Reporting bugs and requesting features
 

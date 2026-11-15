@@ -7,7 +7,7 @@ removed; Python remains only in the SDK and the Hermes plugin.
 
 Releases ship as the container image `ghcr.io/cheftaco/hivemem`, normally installed and
 wired up by the Hive suite controller, `hive.sh`. HiveMem has no dashboard of its own: in the
-suite, HiveXUI is its browser console and calls the same REST API as every other client.
+suite, HiveXUI is its browser UI and calls the same REST API as every other client.
 
 ## Runtime shape
 
@@ -63,7 +63,7 @@ release manifest, in both the `core` and `full` profiles:
 HiveMem still runs on its own: a standalone installation needs only the image (or a source
 build), a Qdrant it can reach and `HIVEMEM_JWT_SECRET`, and clients then use native tokens.
 
-## Console and the removed dashboard
+## The UI and the removed dashboard
 
 The standalone HiveMem dashboard has been removed. `GET /dashboard` returns only a
 placeholder page. `POST /dashboard/login` and the `/dashboard/api/*` webhook and queue
@@ -166,7 +166,7 @@ ts-core/
   src/upgrade.ts          Migration planning, backup and managed upgrade delegation
   tests/                  node:test suites
 Dockerfile                Release container image
-docs/                     OpenAPI, console API, Oathweave and decision records
+docs/                     OpenAPI, UI API, Oathweave and decision records
 docker/
   docker-compose.yml      Local development Qdrant (its hivemem service is the 1.x example)
   hivemem-ts.service      Native systemd unit
