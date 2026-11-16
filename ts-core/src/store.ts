@@ -3,6 +3,8 @@ import { actorCredentialDigest, actorCredentialSchema, actorReceiptCipher, DEFAU
 import { signToken } from './auth.js';
 import { allowedPrivateWebhookHost, deliverWebhook, WebhookDeliveryError, type WebhookRequest } from "./webhook-transport.js";
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { hiveAdminProvisioningDigest, parseHiveAdminProvisioningRequest, type HiveAdminProvisioningRequest, type HiveAdminProvisioningReceipt } from "./hive-admin-provisioning.js";
 import { auditExportPage, HIVEMEM_AUDIT_KINDS, type HiveAuditRecord } from "./audit-export.js";
 import { memoryCollectionName, privateCollectionNames } from "./collection-names.js";
 import { deterministicEmbedding, type HiveMemPersistence, type HiveMemSnapshot, type PersistedAgentRecord } from "./persistence.js";
@@ -2964,6 +2966,67 @@ export class InMemoryHiveMemStore {
     this.agents.set(agentId, { ...agent, metadata: { ...metadata, token_generation: generation } });
     this.queuePersistence();
     return generation;
+  }
+
+  /** Installer-only boundary. Called after loopback and purpose-credential verification, never
+   * by the public agent enrollment API. One synchronous mutation owns principal and receipt. */
+  provisionHiveAdministrator(request: HiveAdminProvisioningRequest): { receipt: HiveAdminProvisioningReceipt; created: boolean } {
+    const key = "hive-admin-account:" + request.operation_id;
+    const digest = hiveAdminProvisioningDigest(request);
+    const recorded = this.operations.get(key);
+    if (recorded) {
+      const receipt = this.hiveAdministratorReceipt(request.operation_id);
+      if (receipt.request_sha256 !== digest) throw new ConflictError("Administrator provisioning operation belongs to another request");
+      // An explicit retry may retry an indeterminate persistence checkpoint, never creation.
+      if (this.persistenceError) this.queuePersistence();
+      return { receipt, created: false };
+    }
+    if (this.agents.has(request.local_id)) throw new ConflictError("The memory principal already exists; it will not be adopted");
+    for (const operation of this.operations.values()) {
+      if (operation.kind !== "hive-admin-account") continue;
+      if (!operation.receipt || typeof operation.receipt !== "object" || Array.isArray(operation.receipt)) throw new ConflictError("Administrator provisioning receipt differs");
+      const receipt = operation.receipt as unknown as HiveAdminProvisioningReceipt;
+      if ((receipt.issuer === request.issuer && receipt.subject === request.subject) || receipt.local_id === request.local_id) {
+        throw new ConflictError("The administrator already belongs to another provisioning operation");
+      }
+    }
+    const receipt: HiveAdminProvisioningReceipt = {
+      schema: 1, operation_id: request.operation_id, issuer: request.issuer, subject: request.subject,
+      local_id: request.local_id, username: request.username, display_name: request.display_name,
+      credential_generation: 0, active: true, status: "committed", request_sha256: digest, created_at: nowIso(),
+    };
+    const binding = { operation_id: receipt.operation_id, issuer: receipt.issuer, subject: receipt.subject, request_sha256: receipt.request_sha256 };
+    this.agents.set(request.local_id, {
+      agent_id: request.local_id, display_name: request.display_name, description: "Hive administrator identity", active: true,
+      created_at: receipt.created_at, memory_counts: {}, metadata: { token_generation: 0, hive_admin_account: binding },
+    });
+    this.operations.set(key, { id: key, kind: "hive-admin-account", created_at: receipt.created_at, receipt: receipt as unknown as JsonObject });
+    this.queuePersistence();
+    return { receipt: structuredClone(receipt), created: true };
+  }
+
+  hiveAdministratorReceipt(operationId: string): HiveAdminProvisioningReceipt {
+    const operation = this.operations.get("hive-admin-account:" + operationId);
+    if (!operation) throw new NotFoundError("Administrator provisioning operation was not found");
+    if (operation.kind !== "hive-admin-account" || !operation.receipt || typeof operation.receipt !== "object" || Array.isArray(operation.receipt)) {
+      throw new ConflictError("Administrator provisioning receipt differs");
+    }
+    const receipt = operation.receipt as unknown as HiveAdminProvisioningReceipt;
+    let original: HiveAdminProvisioningRequest;
+    try {
+      original = parseHiveAdminProvisioningRequest(operationId, { version: 1, issuer: receipt.issuer, subject: receipt.subject,
+        local_id: receipt.local_id, username: receipt.username, display_name: receipt.display_name }, receipt.issuer);
+    } catch { throw new ConflictError("Administrator provisioning receipt differs"); }
+    const agent = this.agents.get(receipt.local_id);
+    const binding = { operation_id: receipt.operation_id, issuer: receipt.issuer, subject: receipt.subject, request_sha256: receipt.request_sha256 };
+    if (receipt.schema !== 1 || receipt.status !== "committed" || receipt.operation_id !== operationId || receipt.credential_generation !== 0 || receipt.active !== true
+      || hiveAdminProvisioningDigest(original) !== receipt.request_sha256
+      || !agent || agent.active !== true || this.credentialGeneration(agent.agent_id) !== 0
+      || agent.created_at !== receipt.created_at || agent.display_name !== receipt.display_name || agent.description !== "Hive administrator identity"
+      || !isDeepStrictEqual(agent.metadata.hive_admin_account, binding)) {
+      throw new ConflictError("The provisioned administrator is missing, disabled, rotated or changed; it will not be recreated");
+    }
+    return structuredClone(receipt);
   }
 
   registerAgent(principal: AuthPrincipal, body: unknown, token: string): AgentRegistered {

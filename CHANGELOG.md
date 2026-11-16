@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.8.0] - 2026-11-16
+
+### Added
+
+- A local installer-only administrator provisioning endpoint creates a distinct memory principal
+  and durable receipt through the running writer. Exact retries retain the same identity; existing,
+  disabled, rotated or changed principals are never adopted or reset. The endpoint is off unless
+  the installation owner configures its independent purpose-scoped secret, accepts only socket
+  loopback requests and issues no memory credential. Browser identity links remain separately
+  controlled by the installation.
+
 ## [1.7.1] - 2026-11-15
 
 ### Changed

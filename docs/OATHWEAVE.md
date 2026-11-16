@@ -29,6 +29,38 @@ Do not put live links or credentials in Git. Prepare and review links independen
 for each installation before applying configuration. No API request creates a
 replacement identity to impersonate a legacy account.
 
+## Guided installation-owned administrator setup
+
+Hive can create a separate memory principal for a new administrator through the running HiveMem
+writer. This does not copy another principal's memories, workspaces, credentials or account ID.
+The installation then publishes its reviewed exact Oathweave account link in the normal managed
+configuration. An Oathweave role alone never creates that link.
+
+The optional `HIVE_ADMIN_PROVISIONING_SECRET` is an independent, randomly generated 64-character
+lowercase hexadecimal secret held only by the installation owner and HiveMem. Leave it absent to
+disable this boundary. It cannot authorize memory access, token issuance, credential rotation,
+account activation or edits to an existing principal. Keep it out of browser configuration, source
+control, logs and command-line arguments.
+
+The owner calls `POST /internal/hive/admin-accounts/{operationId}` from inside HiveMem's container
+over verified loopback HTTPS, with `x-hive-admin-provisioning-secret`. `operationId` is a UUID. The
+strict JSON body is `{version:1,issuer,subject,local_id,username,display_name?}`; `issuer` must equal
+the configured `OATHWEAVE_ISSUER`. The socket peer must be loopback. Browser and proxy provenance
+headers, cookies and authorization bearers are rejected even when the secret is supplied.
+
+The first response is 201 and an exact retry is 200, both after persistence. The receipt contains
+the operation ID, issuer, subject, native principal ID, username, display name, request SHA-256,
+creation time, active status and credential generation zero; it contains no bearer token. A
+matching authenticated `GET` reads the same receipt and checks that the principal still matches.
+Changing the request or reusing an existing ID or subject from another operation answers 409.
+Missing, disabled, rotated or changed principals also answer 409 rather than being recreated.
+
+The principal and receipt use the existing persistence snapshot and recovery format. Back up and
+restore both together. If persistence fails, the response is 503 and the outcome remains
+indeterminate; recover by reading or explicitly retrying the same operation and exact request.
+The retry can persist the retained checkpoint without creating a replacement identity. Keep the
+same operation ID until that outcome is established.
+
 ## Service identities
 
 Another product can call HiveMem with a short-lived Oathweave service-account token,

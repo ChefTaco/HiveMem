@@ -17,6 +17,7 @@ import { createHealth } from "@hivemagnus/hive-common/health";
 import { createRequestContext, runWithRequestContext } from "@hivemagnus/hive-common/context";
 import { readBody as readSharedBody } from "@hivemagnus/hive-common/node-http";
 import { timingSafeEqualString } from "@hivemagnus/hive-common/secrets";
+import { authorizeHiveAdminProvisioning, hiveAdminProvisioningConfig, HiveAdminProvisioningError, HIVE_ADMIN_PROVISIONING_MAX_BYTES, HIVE_ADMIN_PROVISIONING_PATH, isHiveAdminProvisioningOperationId, parseHiveAdminProvisioningRequest } from "./hive-admin-provisioning.js";
 
 export interface HiveMemServerOptions {
   jwtSecret?: string;
@@ -33,6 +34,9 @@ export interface HiveMemServerOptions {
   /** Oathweave client_credentials identities of other products (HIVEMEM_OATHWEAVE_SERVICES_JSON). */
   oathweaveServiceLinks?: readonly ServiceLink[];
   verifyOathweaveService?: (token:string)=>Promise<OathweaveServiceIdentity>;
+  /** Dedicated installer credential. Disabled when HIVE_ADMIN_PROVISIONING_SECRET is absent. */
+  adminProvisioningSecret?: string;
+  adminProvisioningIssuer?: string;
 }
 
 /** Marks principals authenticated by an Oathweave service token. */
@@ -435,6 +439,11 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
   const isRevoked = (jti: string) => revocations.has(jti);
   const metricsToken = options.metricsToken ?? (process.env.HIVEMEM_METRICS_TOKEN || undefined);
   const metricsAllowLoopback = options.metricsAllowLoopback ?? process.env.HIVEMEM_METRICS_ALLOW_LOOPBACK === "true";
+  const adminProvisioning = hiveAdminProvisioningConfig(options.adminProvisioningSecret ?? process.env.HIVE_ADMIN_PROVISIONING_SECRET,
+    options.adminProvisioningIssuer ?? process.env.OATHWEAVE_ISSUER);
+  if (adminProvisioning && [jwtSecret, renewalSecret, metricsToken].includes(adminProvisioning.secret)) {
+    throw new Error("HIVE_ADMIN_PROVISIONING_SECRET must be independent from signing, renewal and metrics credentials");
+  }
   if (metricsToken !== undefined && metricsToken.length < 32) throw new Error("HIVEMEM_METRICS_TOKEN must be at least 32 characters");
 
   const health = createHealth({
@@ -453,6 +462,28 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       const host = request.headers.host ?? "localhost";
       const url = new URL(request.url ?? "/", `http://${host}`);
       const method = request.method ?? "GET";
+
+      if (url.pathname.startsWith(HIVE_ADMIN_PROVISIONING_PATH)) {
+        authorizeHiveAdminProvisioning(request, adminProvisioning);
+        response.setHeader("cache-control", "no-store");
+        const operationId = url.pathname.slice(HIVE_ADMIN_PROVISIONING_PATH.length);
+        if (!adminProvisioning || !isHiveAdminProvisioningOperationId(operationId) || url.search || !["GET", "POST"].includes(method)) {
+          await sendJson(response, 404, { detail: "Not found" }); return;
+        }
+        responseStores.set(response, store);
+        if (method === "GET") {
+          const receipt = store.hiveAdministratorReceipt(operationId);
+          if (receipt.issuer !== adminProvisioning.issuer) throw new HiveAdminProvisioningError(409, "Administrator provisioning receipt belongs to another issuer");
+          await sendJson(response, 200, receipt); return;
+        }
+        if (request.headers["content-type"]?.split(";")[0]?.trim() !== "application/json") {
+          await sendJson(response, 415, { detail: "Administrator provisioning requires application/json" }); return;
+        }
+        (request as IncomingMessage & { hiveMaxBodyBytes?: number }).hiveMaxBodyBytes = Math.min(maxBodyBytes, HIVE_ADMIN_PROVISIONING_MAX_BYTES);
+        const provisioningRequest = parseHiveAdminProvisioningRequest(operationId, await readBody(request), adminProvisioning.issuer);
+        const result = store.provisionHiveAdministrator(provisioningRequest);
+        await sendJson(response, result.created ? 201 : 200, result.receipt); return;
+      }
 
       const header = request.headers.authorization;
       if ((verifyIdentity || verifyService) && typeof header === 'string' && header.startsWith('Bearer ') && !isHealthPath(url.pathname)) {
