@@ -35,7 +35,7 @@ HERMES_HIVEMEM_TOKEN=<agent-jwt-from-hivemem>
 ```
 
 For a shared HTTPS ingress, the API URL may include its explicit memory prefix,
-for example `https://console.example.com/memory`. Do not append `/v1`; the client
+for example `https://suite.example.com/memory`. Do not append `/v1`; the client
 adds native API paths. Existing origin-only URLs remain supported. Encoded paths,
 relative segments, userinfo, query strings, fragments and redirects are rejected;
 configured certificate verification remains required.

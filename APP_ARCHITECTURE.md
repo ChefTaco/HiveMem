@@ -1,7 +1,7 @@
 # HiveMem Architecture
 
 HiveMem is the shared long-term memory service for agents, SDK clients, the Hermes Agent
-plugin and the HiveXUI console. It is one strict TypeScript process in [`ts-core/`](ts-core)
+plugin and HiveXUI, the suite UI. It is one strict TypeScript process in [`ts-core/`](ts-core)
 (Node.js 24 or 26) that keeps its data in Qdrant. The former Python/FastAPI service has been
 removed; Python remains only in the SDK and the Hermes plugin.
 
@@ -21,7 +21,7 @@ suite, HiveXUI is its browser UI and calls the same REST API as every other clie
 | Webhooks | `ts-core/src/webhook-transport.ts` | HMAC-signed deliveries to HTTPS destinations, with delivery history. |
 | Native auth | `ts-core/src/auth.ts`, `ts-core/src/revocation-store.ts` | HS256 JWTs signed with `HIVEMEM_JWT_SECRET`, carrying role and scopes, with persistent `jti` revocation. `issue-token` mints tokens locally. Optional renewal grants use a separate `HIVEMEM_RENEWAL_SECRET`. |
 | Suite auth | `ts-core/src/identity.ts`, `ts-core/src/account-links.ts` | Optional RS256 Oathweave tokens for HiveXUI, verified against `OATHWEAVE_ISSUER`, `OATHWEAVE_JWKS_URL` and `OATHWEAVE_USERINFO_URL` and mapped to existing agents only through explicit `HIVEMEM_OATHWEAVE_IDENTITIES_JSON` links. See [docs/OATHWEAVE.md](docs/OATHWEAVE.md). |
-| Credential coordination | `ts-core/src/actor-credentials.ts`, `ts-core/src/initial-account.ts` | Idempotent enroll, rotate and disable operations with encrypted recovery receipts, and the protected first-start account file (`HIVEMEM_INITIAL_ACCOUNT_FILE`) used by fresh suite installations. See [docs/CONSOLE_API.md](docs/CONSOLE_API.md). |
+| Credential coordination | `ts-core/src/actor-credentials.ts`, `ts-core/src/initial-account.ts`, `ts-core/src/hive-admin-provisioning.ts` | Idempotent enroll, rotate, renew and disable operations with encrypted recovery receipts ([docs/CONSOLE_API.md](docs/CONSOLE_API.md)); the protected first-start account file (`HIVEMEM_INITIAL_ACCOUNT_FILE`) used by fresh suite installations; and the installer-only administrator provisioning endpoint (`HIVE_ADMIN_PROVISIONING_SECRET`, [docs/OATHWEAVE.md](docs/OATHWEAVE.md#guided-installation-owned-administrator-setup)). |
 | Local state | `ts-core/src/writer-lock.ts`, `ts-core/src/durable-file.ts` | Under `HIVEMEM_STORAGE_PATH` (default `${HIVE_HOME:-~/.hive}/memory`): a `flock` writer lock that allows one writer per data directory, the write-recovery journal and the revocation list. |
 | Migrations | `ts-core/src/upgrade.ts`, `ts-core/src/migrations/` | `migrate --plan` is read-only; `migrate` backs up and applies the persisted-format migration. Startup refuses pending migrations unless `HIVE_AUTO_MIGRATE=true`. |
 | Hermes plugin | `hermes-plugin/` | Python Hermes Agent memory provider. It talks to HiveMem over REST only. |
