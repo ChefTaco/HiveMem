@@ -49,10 +49,12 @@ printf 'HIVEMEM_JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > hivemem.env
 echo 'HIVE_AUTO_MIGRATE=true' >> hivemem.env
 ```
 
-Build, check the configuration, then start the server:
+Build, check the configuration, then start the server. The build bundles the vendored release
+tooling, so install from the repository root first (`npm run bootstrap` installs `ts-core`,
+`sdks/typescript` and `tooling/release`):
 
 ```bash
-npm ci
+(cd .. && npm run bootstrap)
 npm run build
 node dist/src/cli.js check --env-file hivemem.env
 node dist/src/cli.js --env-file hivemem.env
@@ -75,6 +77,8 @@ token issuance, registration, and every endpoint.
 | `hivemem-server check` | Validate the configuration and check that Qdrant is reachable. Prints a report and exits 0 when the server can start, 1 otherwise. It does not start the server or write data. |
 | `hivemem-server env-schema` | Print every supported environment variable as JSON (name, default, whether it is required or secret, and a description). |
 | `hivemem-server issue-token --subject <id>` | Sign an access token with `HIVEMEM_JWT_SECRET` and print only the token. See [Issuing tokens](#issuing-tokens). |
+| `hivemem-server migrate --plan [--json]` / `migrate --backup-dir <dir>` | Inspect, or back up and apply, pending storage migrations. See [Managed upgrades](#managed-upgrades). |
+| `hivemem-server upgrade` / `rollback` | Delegate to the owner-run launcher of a legacy managed install |
 | `hivemem-server --help` / `--version` | Show usage or the version |
 
 `--env-file <path>` loads a dotenv file before the configuration is read. It works with `start`,
@@ -128,9 +132,24 @@ All configuration comes from environment variables. Only `HIVEMEM_JWT_SECRET` is
 | `HIVEMEM_METRICS_TOKEN` | unset | Static bearer token (32+ characters) for `GET /metrics`; admin JWTs always work. |
 | `HIVEMEM_EMBEDDING_ENDPOINT` | unset | Optional OpenAI-compatible embeddings URL (HTTPS, or HTTP on loopback). Also set `HIVEMEM_EMBEDDING_MODEL`, `HIVEMEM_EMBEDDING_REVISION`, `HIVEMEM_EMBEDDING_DIMENSIONS`, `HIVEMEM_SEMANTIC_COLLECTION` (must start with `hivemem_shadow_`), and `HIVEMEM_EMBEDDING_API_KEY` if the endpoint needs a key. |
 
-Run `hivemem-server env-schema` for the machine-readable list. The
-[API reference](../HIVEMEM_API.md)
-documents the remaining tuning variables.
+Run `hivemem-server env-schema` for the machine-readable list of the settings above. The server
+also reads these:
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `HIVEMEM_TS_TLS_CERT_FILE`, `HIVEMEM_TS_TLS_KEY_FILE` | unset | Take precedence over `HIVEMEM_TLS_CERT_FILE` and `HIVEMEM_TLS_KEY_FILE`. |
+| `HIVEMEM_QDRANT_HOST`, `HIVEMEM_QDRANT_PORT` (or `QDRANT_URL`, `QDRANT_HOST`, `QDRANT_PORT`) | `127.0.0.1`, `6333` | Used only when `HIVEMEM_QDRANT_URL` is unset. |
+| `HIVEMEM_REVOCATION_FILE` | `<HIVEMEM_STORAGE_PATH>/revoked-tokens.json` | Persistent `jti` revocation list. |
+| `HIVEMEM_METRICS_ALLOW_LOOPBACK` | `false` | `true` serves `/metrics` to loopback clients without credentials. |
+| `HIVEMEM_MAX_BODY_BYTES` | `1048576` | Request body limit (at least 1024). |
+| `HIVEMEM_WORKER_ENABLED` | `true` | `false` stops the background queue worker. `HIVE_REHEARSAL=true` stops it too. |
+| `HIVEMEM_CONSOLIDATION_INTERVAL_SECONDS` | `300` | How often the worker schedules consolidation; `0` turns scheduling off. |
+| `HIVEMEM_WEBHOOK_ALLOWED_PRIVATE_HOSTS` | empty | Comma-separated host names webhooks may reach on a private network. |
+| `HIVEMEM_WEBHOOK_CA_FILE` | system CA store | PEM trust anchor for webhook receivers. |
+| `HIVEMEM_INITIAL_ACCOUNT_FILE` | unset | First-start identity file for fresh suite installs (see the [repository README](../README.md#fresh-suite-initialization)). |
+| `OATHWEAVE_ISSUER`, `OATHWEAVE_JWKS_URL`, `OATHWEAVE_USERINFO_URL`, `HIVEMEM_OATHWEAVE_IDENTITIES_JSON`, `HIVEMEM_OATHWEAVE_SERVICES_JSON` | unset | Suite sign-in and service tokens. See [docs/OATHWEAVE.md](../docs/OATHWEAVE.md). |
+| `HIVE_ADMIN_PROVISIONING_SECRET` | unset | Enables the installer-only administrator provisioning endpoint. See [docs/OATHWEAVE.md](../docs/OATHWEAVE.md#guided-installation-owned-administrator-setup). |
+| `HIVEMEM_DEBUG` | `false` | `true` prints stack traces for unexpected CLI errors. |
 
 ### No silent data loss
 

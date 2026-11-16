@@ -69,7 +69,7 @@ Returns the current bearer-token principal:
 
 ### Dashboard Login
 
-`/dashboard` accepts the existing JWT flow (`?token=<jwt>` or pasted token form) for agent and admin JWTs and stores it in the `HttpOnly; Secure; SameSite=Strict` dashboard cookie.
+`POST /dashboard/login` validates an agent or admin JWT sent as `{"token": "..."}` and stores it in the `HttpOnly; Secure; SameSite=Strict` cookie used by the `/dashboard/api/*` compatibility routes. There is no dashboard page behind it.
 
 ### Token Lifecycle
 
@@ -98,7 +98,7 @@ All REST API router paths below are mounted under `/v1`. Dashboard routes are mo
 
 | Area | Method | Path | Notes |
 | --- | --- | --- | --- |
-| Root | `GET` | `/` | Redirects to `/dashboard` |
+| Root | `GET` | `/` | Service identity (`status`, `service`, `implementation`) |
 | Health | `GET` | `/v1/health` | Compatibility status; authenticated callers receive operational details |
 | Health | `GET` | `/v1/health/live` | Dependency-free liveness |
 | Health | `GET` | `/v1/health/ready` | Qdrant + embedding readiness; returns 503 when degraded |
@@ -108,8 +108,8 @@ All REST API router paths below are mounted under `/v1`. Dashboard routes are mo
 | Auth | `POST` | `/v1/auth/login` | Validate an existing JWT and return principal metadata |
 | Auth | `GET` | `/v1/auth/me` | Current bearer-token principal |
 | Auth | `POST` | `/v1/auth/tokens` | Mint scoped token |
-| Auth | `GET` | `/v1/auth/tokens` | Compatibility token list response |
-| Auth | `POST` | `/v1/auth/revoke` | Compatibility revoke success response |
+| Auth | `GET` | `/v1/auth/tokens` | Unavailable (501); containment uses token generations and revocation |
+| Auth | `POST` | `/v1/auth/revoke` | Persist a token's `jti` revocation |
 | Auth | `POST` | `/v1/auth/refresh` | Mint a replacement token |
 | Memories | `POST` | `/v1/memories` | Create one memory |
 | Memories | `POST` | `/v1/memories/batch` | Create 1-100 memories |
@@ -160,6 +160,7 @@ All REST API router paths below are mounted under `/v1`. Dashboard routes are mo
 | Admin | `POST` | `/v1/admin/workspaces/{workspace_id}/prune` | Workspace-scoped soft-delete dry-run/apply |
 | Admin | `POST` | `/v1/admin/test-data/cleanup` | Unavailable (501) |
 | Admin | `POST` | `/v1/admin/prune` | Unavailable (501); use workspace retention/purge |
+| Admin | `POST` | `/v1/admin/purge` | Bounded permanent deletion of archived memories in one workspace |
 | Conclusions | `POST` | `/v1/peers/{peer_id}/conclusions` | Create derived conclusion |
 | Conclusions | `GET` | `/v1/peers/{peer_id}/conclusions` | List conclusions |
 | Conclusions | `POST` | `/v1/peers/{peer_id}/conclusions/query` | Vector query conclusions |
@@ -173,7 +174,7 @@ All REST API router paths below are mounted under `/v1`. Dashboard routes are mo
 | Peer Cards | `DELETE` | `/v1/peers/{peer_id}/card/{card_id}` | Delete peer card |
 | Peer Cards | `POST` | `/v1/peers/{peer_id}/card/rebuild` | Queue card rebuild/dream |
 | Peer Cards | `POST` | `/v1/peers/{peer_id}/card/review` | Review active/stale card state |
-| Reasoning | `POST` | `/v1/reasoning/providers/compare` | Compare configured reasoning providers |
+| Reasoning | `POST` | `/v1/reasoning/providers/compare` | Unavailable (501); reasoning is local and deterministic |
 | Reasoning | `POST` | `/v1/peers/{peer_id}/dream` | Queue peer dream consolidation |
 | Lifecycle | `POST` | `/v1/lifecycle/retention/apply` | Retention dry-run/apply |
 | Lifecycle | `POST` | `/v1/lifecycle/forget-me` | Subject deletion/anonymization dry-run/apply |
@@ -181,7 +182,7 @@ All REST API router paths below are mounted under `/v1`. Dashboard routes are mo
 | Lifecycle | `POST` | `/v1/memories/compactions` | Store compaction provenance |
 | Lifecycle | `POST` | `/v1/memories/negotiations` | Store negotiation proposal |
 | Lifecycle | `POST` | `/v1/memories/multimodal` | Attach multimodal reference |
-| Lifecycle | `POST` | `/v1/memories/critic/review` | Deterministic critic review |
+| Lifecycle | `POST` | `/v1/memories/critic/review` | Unavailable (501) |
 | Queue | `GET` | `/v1/queue/status` | Queue status and filtered job summaries |
 | Queue | `GET` | `/v1/queue/jobs/{job_id}` | Fetch full job |
 | Queue | `GET` | `/v1/queue/operations/{operation_id}` | Fetch the job for an idempotent operation receipt |
@@ -202,8 +203,8 @@ All REST API router paths below are mounted under `/v1`. Dashboard routes are mo
 | Agents | `GET` | `/v1/agents/{agent_id}/bundle` | Export profile bundle |
 | Agents | `POST` | `/v1/agents/{agent_id}/bundle` | Import/upsert profile bundle |
 | Embedding | `POST` | `/v1/embed` | Embed text without storing |
-| Dashboard | `GET` | `/dashboard` | HTML dashboard |
-| Dashboard | `GET` | `/dashboard/memories/{memory_id}` | Memory deep-link page |
+| Dashboard | `GET` | `/dashboard` | Placeholder page; the dashboard was removed (HiveXUI is the UI) |
+| Dashboard | `GET` | `/dashboard/memories/{memory_id}` | Same placeholder page |
 | Dashboard | `POST` | `/dashboard/login` | Cookie login |
 | Dashboard API | `GET` | `/dashboard/api/memory-options` | UI option metadata |
 | Dashboard API | `POST` | `/dashboard/api/memories` | Dashboard memory create proxy |
@@ -570,7 +571,7 @@ Browse supports `scope`, `type`, `workspace_id`, `session_id`, `offset`, and `li
 
 `GET /v1/memories/{memory_id}/related` searches accessible collections with the source memory vector and returns `{ "source_id": "...", "related": [...] }`; each related item includes `memory`, `similarity`, `collection`, and a relationship label: `near_duplicate`, `corroboration`, `same_topic`, `cross_type`, or `semantically_similar`.
 
-`POST /v1/memories/conflicts` accepts `content`, optional `scope`, `type`, and `workspace_id`, embeds the content, and returns memories from other agents above `HIVEMEM_CONFLICT_SIMILARITY_THRESHOLD`.
+`POST /v1/memories/conflicts` accepts `content`, optional `scope`, `type`, `workspace_id` (default `default`) and `limit` (default 10), searches the caller's readable memories from other agents for that content, and returns the closest matches as a search response.
 
 ---
 
@@ -830,9 +831,7 @@ Actions:
 
 `POST /v1/admin/workspaces/{workspace_id}/prune` applies workspace retention only with query `dry_run=false`; preview is the default. It archives eligible memories, not sessions. Unscoped prune is unavailable (501). Bounded permanent deletion of already archived memories is a separate admin `POST /v1/admin/purge` operation with explicit workspace, limit and `dry_run:false`.
 
-`POST /v1/admin/test-data/cleanup` is a narrowly scoped hard-delete endpoint for browser and integration smoke-test data. It accepts `workspace_id`, `tag_prefix`, `agent_id_prefix`, `peer_id_prefix`, `dry_run`, and `limit_per_collection`; at least one prefix is required.
-
-`POST /v1/admin/prune` globally hard-deletes stale records from active memory collections only. Targets include old soft-deleted records, expired records, old superseded records, and optionally low-confidence decayed records. When `HIVEMEM_ARCHIVE_ENABLED=true`, matching records are copied to the `archive` collection before deletion. Response shape is `{ "pruned": { "<collection>": { "soft_deleted": 0, "expired": 0, "superseded": 0, "decayed": 0 } }, "total_pruned": 0 }`.
+`POST /v1/admin/test-data/cleanup` and the unscoped `POST /v1/admin/prune` are unavailable (501) in the TypeScript core; use workspace prune and purge above.
 
 ---
 
@@ -873,9 +872,9 @@ Peer-card endpoints are first-class convenience routes over `kind="peer_card"` c
 - `POST /v1/peers/{peer_id}/card/rebuild` queues the same dream workflow as `/peers/{peer_id}/dream`.
 - `POST /v1/peers/{peer_id}/card/review` returns counts, latest active-card timestamp, stale-card notes, and `needs_rebuild`.
 
-`POST /v1/peers/{peer_id}/dream` queues dream-like consolidation for the peer. The worker deduplicates redundant conclusions, flags changed/conflicting state, infers repeated patterns, and refreshes peer cards. Provider credentials are read only from server-side `HIVEMEM_REASONING_*` settings.
+`POST /v1/peers/{peer_id}/dream` queues dream-like consolidation for the peer. The worker deduplicates redundant conclusions, flags changed/conflicting state, infers repeated patterns, and refreshes peer cards. Reasoning runs locally and deterministically; no external provider is called.
 
-`POST /v1/reasoning/providers/compare` runs local/OpenAI-compatible/Anthropic/Gemini/Ollama/vLLM providers against the same memory IDs and reports latency, estimated tokens/cost, JSON validity, grounded conclusion counts, and a simple quality score. Admins may include `select_default_provider` to switch the in-process default for subsequent reasoning jobs.
+`POST /v1/reasoning/providers/compare` is unavailable (501): there are no external reasoning providers to compare.
 
 `POST /v1/memories/forgetting/review` schedules a review-only `forgetting_review` job. Results recommend prune, compress, merge, or anonymize actions for stale, superseded, low-confidence, duplicate, long low-importance, or sensitive memories; no destructive action is applied automatically.
 
@@ -895,13 +894,13 @@ POST /v1/memories/critic/review
 
 `/v1/lifecycle/retention/apply` evaluates or applies rules by workspace, tag, sensitivity, retention class, age, and action (`expire`, `archive`, `anonymize`, `summarize`, or `preserve`). `dry_run=true` returns affected records without mutating data. `/v1/lifecycle/forget-me` reports and optionally anonymizes or soft-deletes all manageable memories matching a subject. `/v1/archive/search` explicitly searches cold archived memories without changing normal live-memory search behavior.
 
-Compaction records, memory-negotiation proposals, and critic findings are review artifacts stored as derived operator records. Multimodal references are attached to memory metadata with URI, thumbnail, extracted text, and provenance so context APIs can include safe file/image/audio references without loading binary payloads into shared memory.
+Compaction records and memory-negotiation proposals are review artifacts stored as derived operator records. `POST /v1/memories/critic/review` is unavailable (501). Multimodal references are attached to memory metadata with URI, thumbnail, extracted text, and provenance so context APIs can include safe file/image/audio references without loading binary payloads into shared memory.
 
 ---
 
 ### Queue
 
-HiveMem stores async reasoning jobs in `_queue`. The in-process worker runs local-first reasoning handlers by default and can optionally call server-configured external providers.
+HiveMem stores async reasoning jobs in `_queue`. The in-process worker runs deterministic local reasoning handlers; it calls no external provider.
 
 ```http
 GET /v1/queue/status
@@ -913,7 +912,7 @@ DELETE /v1/queue/jobs/{job_id}
 
 Consolidation and dream requests accept an optional client-chosen `operation_id` (`[A-Za-z0-9._:-]{1,160}`). Repeating a request with the same `operation_id` and payload returns the original job instead of enqueueing a new one; reusing it with a different payload returns `409`. `GET /v1/queue/operations/{operation_id}` returns the job recorded for the caller's operation in that workspace and task type, including its final result after completion. Receipts for finished jobs are retained for 30 days (at most 10,000 receipts per installation, oldest finished first).
 
-`GET /v1/queue/status` supports filters for `status`, `task_type`, `session_id`, `peer_id`, `owner_agent_id`, `workspace_id`, `observer_peer_id`, `observed_peer_id`, and `work_unit_key`. Retry/cancel are admin-only. Memory and session writes enqueue summary, representation, consolidation, conflict-scan, and embedding-reconcile tasks where applicable. Representation jobs wait for `HIVEMEM_REASONING_REPRESENTATION_MIN_TOKENS` or `HIVEMEM_REASONING_REPRESENTATION_MAX_WAIT_SECONDS` before doing expensive extraction. When the queue is quiet, the worker may enqueue low-priority `sleep` jobs for background consolidation; sleep jobs stop appearing while ordinary work is pending. Queue records include optional `not_before` timestamps so expensive reasoning can wait for an idle window. Running jobs heartbeat `locked_at`; stale leases are released automatically, and old completed/dead jobs are archived as summaries before queue pruning.
+`GET /v1/queue/status` supports filters for `status`, `task_type`, `session_id`, `peer_id`, `owner_agent_id`, `workspace_id`, `observer_peer_id`, `observed_peer_id`, and `work_unit_key`. Retry/cancel are admin-only. Memory and session writes enqueue summary, representation, consolidation, conflict-scan, and embedding-reconcile tasks where applicable. Representation jobs wait until their memories hold about 400 tokens or 300 seconds have passed (fixed defaults) before extracting. When the queue is quiet, the worker may enqueue low-priority `sleep` jobs for background consolidation; sleep jobs stop appearing while ordinary work is pending. Queue records include optional `not_before` timestamps so expensive reasoning can wait for an idle window. Running jobs heartbeat `locked_at`; stale leases are released automatically, and old completed/dead jobs are archived as summaries before queue pruning.
 
 Consolidation cron execution records and explicit scan cursors live in `_cron_runs`, separate from `_queue`, so skipped checks are visible and queue cleanup cannot alter cron watermarks. Completed consolidation job results include reviewed memory IDs, generated conclusions, duplicate merges, conflict hints, skipped reasons, and batch token details for dashboard inspection.
 
@@ -1013,24 +1012,23 @@ messages = context.to_openai()
 
 ### TypeScript SDK
 
-The source package in `sdks/typescript` is a fetch-based client for Node.js and browser-compatible runtimes.
+`@hivemagnus/hivemem-sdk` (source in `sdks/typescript`) is a fetch-based client for Node.js and browser-compatible runtimes, published on npm.
 
 ```bash
-npm --prefix sdks/typescript install
-npm --prefix sdks/typescript run build
+npm install @hivemagnus/hivemem-sdk
 ```
 
 ```ts
 import { HiveMem } from "@hivemagnus/hivemem-sdk";
 
-const client = new HiveMem({ apiUrl: process.env.HIVEMEM_API_URL, token: process.env.HIVEMEM_TOKEN });
-const results = await client.searchMemories({ query: "communication style", limit: 5 });
+const client = new HiveMem({ baseUrl: process.env.HIVEMEM_API_URL, token: process.env.HIVEMEM_TOKEN });
+const results = await client.searchMemories("communication style", { limit: 5 });
 const context = await client.context({ tokens: 1200, search_query: "communication style" });
 ```
 
 ### Dashboard and Capability Checks
 
-`/dashboard` includes top-line memory stats, a balanced overview band with Memory Timeline over Task History on the left and Relationship Graph spanning the right half, recent-memory tables whose memory text opens the edit modal, a memory CRUD modal, collection/agent sidebars, a compact queue snapshot, and a cohesive admin workbench. The workbench groups memory detail/search/context/conflict tools, consolidation analysis, webhooks, and review workflows. Unscoped cleanup and critic operations return HTTP 501 and their dashboard boxes/buttons are not rendered. The older separate session browser, search-explanation boxes, and display-preference box are not rendered.
+HiveMem has no dashboard of its own. `GET /dashboard` returns a placeholder page; `POST /dashboard/login` and the `/dashboard/api/*` routes stay as compatibility paths for existing callers. In the suite, [HiveXUI](https://github.com/ChefTaco/HiveXUI) is the UI and calls the `/v1` API ([docs/CONSOLE_API.md](docs/CONSOLE_API.md)).
 
 ### Operation capability matrix
 
@@ -1259,26 +1257,21 @@ Recommended standalone defaults:
 | `HIVEMEM_API_URL` | `http://localhost:18790` | Canonical URL for agents and tools; override per deployment |
 | `HIVEMEM_CA_FILE` | system CA store | Client-side PEM trust anchor for private PKI; certificate and hostname verification remain mandatory |
 | `HIVEMEM_WEB_PORT` | `443` | Production HTTPS port used by systemd/deploy scripts |
-| `HIVEMEM_CORS_ORIGINS` | `http://localhost:18790` in `.env.example` | Add other dashboard origins explicitly |
-| `HIVEMEM_STORAGE_PATH` | `/var/opt/hivemem` | Local standalone storage root (set by the systemd unit and Docker image; the `hivemem-server` CLI defaults to `${HIVE_HOME:-~/.hive}/memory`) |
-| `HIVEMEM_BACKUP_PATH` | `/var/opt/hivemem/backups` | Qdrant snapshot storage |
-| `HIVEMEM_NFS_BASE_PATH` | `/var/opt/hivemem` | Local resource root unless NFS is explicitly enabled |
-| `HIVEMEM_USE_NFS` | `false` | Set true only when intentionally using shared NFS resources |
+| `HIVEMEM_STORAGE_PATH` | `${HIVE_HOME:-~/.hive}/memory` | Local state root. The systemd unit sets `/var/opt/hivemem`; the container image sets `HIVE_HOME=/data`, so `/data/memory` |
+| `HIVEMEM_BACKUP_PATH` | `/var/opt/hivemem/backups` | Snapshot directory for `scripts/backup.py` and `scripts/deploy_server.sh` (not read by the server) |
 | `HIVEMEM_EMBEDDING_ENDPOINT` | unset | Optional trusted embedding HTTP API; requires explicit model, revision, dimensions and shadow collection. Legacy GGUF path settings do not load a model in the TypeScript core. |
-| `HIVEMEM_WEBHOOKS_ENABLED` | `true` | Enable REST-managed webhook event emission and delivery queueing |
-| `HIVEMEM_WEBHOOK_TIMEOUT_SECONDS` | `10` | Per-delivery outbound HTTP timeout |
+| `HIVEMEM_WEBHOOK_ALLOWED_PRIVATE_HOSTS` | empty | Comma-separated host names a webhook may target on a private network |
+| `HIVEMEM_WEBHOOK_CA_FILE` | system CA store | PEM trust anchor for webhook receivers on private PKI |
 | `HIVEMEM_ADMIN_TOKEN` | empty | Optional deploy/tooling convention for an admin JWT; the server still validates it only as a normal bearer token |
-| `HIVEMEM_REVOCATION_FILE` | `/var/opt/hivemem/revoked-tokens.json` | Protected persistent `jti` revocation registry |
+| `HIVEMEM_REVOCATION_FILE` | `<HIVEMEM_STORAGE_PATH>/revoked-tokens.json` | Protected persistent `jti` revocation registry |
 | `HIVEMEM_METRICS_TOKEN` | unset | Static bearer token (>= 32 chars) accepted on `/metrics`; admin JWTs are always accepted |
 | `HIVEMEM_METRICS_ALLOW_LOOPBACK` | `false` | Serve `/metrics` without credentials to loopback clients only |
-| `HIVEMEM_SANITIZE_DETECTION_MODE` | `warn` | `warn`, `redact`, or `reject` for secret/PII detectors |
-| `HIVEMEM_SANITIZE_DETECT_PII` | `true` | Enable email/phone/SSN pattern detection |
-| `HIVEMEM_SANITIZE_DETECT_SECRETS` | `true` | Enable token/password/key pattern detection |
-| `HIVEMEM_SANITIZE_DENY_REGEXES` | empty | Newline-separated custom regexes for project-specific rejection/redaction policy |
 
-The provided `scripts/deploy_server.sh` deploys directly from the `hive-mem` repository to the configured `SSH_HOST` from `.env`. It supports `--dry-run` plus SSH key/agent auth through `HIVEMEM_SSH_KEY` or shared `DEPLOY_SSH_KEY`; password bootstrap mode remains available through `SSH_PASSWORD` or `DEPLOY_PASSWORD`. The production service runs from `/opt/hivemem`, writes local operational data under `/var/opt/hivemem`, and uses `/var/log/hivemem` for audit logs.
+The server's own settings are listed by `hivemem-server env-schema` and in [ts-core/README.md](ts-core/README.md#configuration). Sanitization is set per workspace (`policy.sanitization`), not by environment variable.
 
-The former Python runtime had PAM login. The production TypeScript core uses bounded HS256 JWT validation plus a persistent `jti` revocation registry; keep operator login in Hive Router and pass server-side Memory proxy tokens through Router env instead of exposing HiveMem tokens to browsers.
+The provided `scripts/deploy_server.sh` deploys directly from this repository to the configured `SSH_HOST` from `.env`. It supports `--dry-run` plus SSH key/agent auth through `HIVEMEM_SSH_KEY` or shared `DEPLOY_SSH_KEY`; password bootstrap mode remains available through `SSH_PASSWORD` or `DEPLOY_PASSWORD`. The production service runs from `/opt/hivemem`, writes local operational data under `/var/opt/hivemem`, and uses `/var/log/hivemem` for audit logs.
+
+The former Python runtime had PAM login. The TypeScript core uses bounded HS256 JWT validation plus a persistent `jti` revocation registry for native clients. Browsers never hold a native HiveMem token: in the suite, HiveXUI signs people in through Oathweave and calls HiveMem with a short-lived token for the `hivemem` audience ([docs/OATHWEAVE.md](docs/OATHWEAVE.md)).
 
 ---
 
@@ -1419,16 +1412,17 @@ The repository includes a Hermes Agent memory-provider plugin in `hermes-plugin/
 ### Install
 
 ```bash
-bash hermes-plugin/scripts/deploy_hermes_plugin.sh \
+HERMES_HIVEMEM_TOKEN="$HERMES_HIVEMEM_TOKEN" bash hermes-plugin/scripts/deploy_hermes_plugin.sh \
   --hermes-home "$HOME/.hermes" \
   --api-url "$HIVEMEM_API_URL" \
-  --token "$HERMES_HIVEMEM_TOKEN" \
   --set-active
 ```
 
+The token is read only from `HERMES_HIVEMEM_TOKEN` (or `HIVEMEM_TOKEN`) or a mode-0600 `--env-file`, never from a command-line flag.
+
 The deployment script copies `plugins/memory/hivemem` into the Hermes profile, writes non-secret settings to `$HERMES_HOME/hivemem.json`, stores `HERMES_HIVEMEM_TOKEN` in the Hermes profile `.env` when provided, and can optionally restart the Hermes gateway.
 
-Remote deployment over SSH is supported with `--ssh-host`, `--ssh-user`, and `--remote-hermes-home`.
+Remote deployment over SSH needs `--ssh-host`, `--ssh-user`, `--ssh-identity-file` and `--ssh-known-hosts-file`; `--remote-hermes-home` selects the remote profile. Run the script with `--help` for every option.
 
 ### Hermes Configuration
 

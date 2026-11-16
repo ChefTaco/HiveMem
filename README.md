@@ -27,12 +27,12 @@ The production runtime is the strict TypeScript core in [`ts-core/`](ts-core), b
 ## Features
 
 - **No model required.** Clients send plain text. By default HiveMem retrieves with deterministic lexical search over a token-hash embedding (`hivemem-token-hash-v1`, 768 dimensions); an optional OpenAI-compatible embeddings endpoint adds a semantic shadow index.
-- **Per-agent scoping and scoped tokens.** `shared_*` collections are visible only within an authorized workspace; `{agent_id}_private_*` collections (an encoded name for agent IDs Qdrant cannot store, see [APP_ARCHITECTURE.md](APP_ARCHITECTURE.md#data-model)) are visible only to their owner, while admin tokens can inspect the full console view. Agent identity is derived from the JWT `sub` claim. The TypeScript core supports bounded scoped tokens and persistent `jti` revocation.
+- **Per-agent scoping and scoped tokens.** `shared_*` collections are visible only within an authorized workspace; `{agent_id}_private_*` collections (an encoded name for agent IDs Qdrant cannot store, see [APP_ARCHITECTURE.md](APP_ARCHITECTURE.md#data-model)) are visible only to their owner, while admin tokens can read every collection. Agent identity is derived from the JWT `sub` claim. The TypeScript core supports bounded scoped tokens and persistent `jti` revocation.
 - **Workspaces, sessions, and episodes.** Lightweight `workspace_id` and `session_id` filters group memories; optional episodes/messages preserve raw chronology and can asynchronously produce ordinary memories. Workspace records carry policies, members, and effective settings cascades while preserving the indexed Option A storage model.
 - **Semantic, text, and hybrid search.** Vector, full-text, and hybrid endpoints share a structured filter DSL with logical operators, `metadata.*` paths, valid-time `as_of` filtering, explainability, and optional MMR diversity controls.
 - **Source-cited chat & context.** `POST /v1/chat` and `/v1/context` return deterministic, source-cited answers and token-budgeted prompt packages without calling an external LLM.
 - **Async reasoning queue.** Memory writes enqueue summary, peer-card, representation, conflict-scan, consolidation, dream, sleep, and forgetting-review jobs to a Qdrant-backed queue with token-threshold batching, cooldown awareness, worker heartbeats, stale-lock recovery, and retention/archive summaries.
-- **Operational telemetry and governance.** Consolidation cron runs and cursors persist separately from queue jobs; `/metrics` exposes request, embedding, Qdrant, queue, consolidation, and webhook metrics; authenticated health reports versions and subsystem readiness; admin audit APIs query memory write history, and workspace export/import supports staging hydration without webhook secrets.
+- **Operational telemetry and governance.** Consolidation cron runs and cursors persist separately from queue jobs; `/metrics` exposes request, embedding, Qdrant, queue, consolidation, and webhook metrics; authenticated health reports versions and subsystem readiness; admin audit APIs query memory write history, and workspace export produces a portable bundle without webhook secrets (import is not available in this runtime).
 - **Webhooks.** REST-managed endpoints with timestamped HMAC signatures and delivery nonces cover `memory.created`, `session.created`, `summary.updated`, `peer_card.updated`, `conflict.detected`, `queue.empty`, and `webhook.test`.
 - **Operator and agent surfaces.** Python/TypeScript SDKs, REST helper scripts, the Hermes Agent memory-provider plugin, and the memory pages of [HiveXUI](https://github.com/ChefTaco/HiveXUI), the suite UI, all use the REST API.
 - **Compatibility tests.** The TypeScript core uses deterministic node:test coverage for REST compatibility, Qdrant hydration, reasoning, dashboard compatibility routes, and the Hermes plugin contract.
@@ -47,8 +47,8 @@ records the image digest.
 **With the Hive suite.** HiveMem is normally installed by `hive.sh`, the
 [Hive suite controller](https://github.com/ChefTaco/hive#install-the-suite), in both the
 `core` and `full` profiles. The controller pins the image by digest from a signed release
-manifest, writes its configuration and secrets, and runs its private Qdrant. Hive 3.9.1 pins
-HiveMem 1.7.0.
+manifest, writes its configuration and secrets, and runs its private Qdrant. Hive 3.11.0 pins
+HiveMem 1.8.0.
 
 **Legacy npm packages.** HiveMem 1.3 and later are not published on npm. The npm package
 `@hivemagnus/hivemem-server` (the name the server source still uses) and the image
@@ -96,21 +96,24 @@ initialize storage; later migrations need a verified backup. See
 ## Quick Start (development)
 
 ```bash
-# 1. Start Qdrant
+# 1. Start Qdrant (bound to localhost)
 docker compose -f docker/docker-compose.yml up -d qdrant
 
-# 2. Build and test the TypeScript core (production runtime)
-npm --prefix ts-core install
-npm --prefix ts-core run build
+# 2. Install dependencies and hooks, then build and test the TypeScript core
+npm run bootstrap
+npm run build
 npm run test:ts-core
 
-# 3. Configure
+# 3. Configure: HIVEMEM_JWT_SECRET is required (at least 32 bytes)
+umask 077
 cp .env.example .env
-# Edit .env — HIVEMEM_JWT_SECRET is required and must be at least 32 chars.
+sed -i -e '/^HIVEMEM_JWT_SECRET=$/d' \
+  -e "s|^HIVEMEM_STORAGE_PATH=.*|HIVEMEM_STORAGE_PATH=$PWD/.hive-dev/memory|" \
+  -e 's|^HIVE_AUTO_MIGRATE=.*|HIVE_AUTO_MIGRATE=true|' .env
+printf 'HIVEMEM_JWT_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
 
-# 4. Run the TypeScript core (HTTP dev; set TLS + Qdrant env for production parity)
-HIVEMEM_JWT_SECRET=<local-secret> HIVEMEM_TS_PERSISTENCE=qdrant \
-  HIVEMEM_TS_CORE_HOST=0.0.0.0 HIVEMEM_WEB_PORT=18790 npm --prefix ts-core start
+# 4. Run the TypeScript core over plain HTTP on 127.0.0.1:18790
+npm --prefix ts-core start -- --env-file "$PWD/.env"
 
 # 5. Health checks
 curl http://localhost:18790/v1/health
@@ -180,7 +183,7 @@ npm --prefix sdks/typescript test
 
 The TypeScript core tests are the production gate.
 
-Integration tests use a deterministic in-process embedder when the configured GGUF model is not available locally; production startup still requires the real configured embedder. The Docker Compose Qdrant service sets a higher `nofile` ulimit so Qdrant can reopen many collections and payload indexes reliably after restarts.
+No test needs an embedding model: retrieval uses the deterministic token-hash embedding, and the semantic index tests use a local fake endpoint. `test:hermes-dual-stack` needs a Python virtualenv at `.venv` with the plugin's test dependencies. The Docker Compose Qdrant service sets a higher `nofile` ulimit so Qdrant can reopen many collections and payload indexes reliably after restarts.
 
 For remote integration testing against a separate host, do not expose Qdrant directly. Run the tests on the HiveMem host, use an SSH tunnel or VPN/firewall rule that restricts Qdrant access to trusted clients, or point tests at the HiveMem API where applicable.
 
@@ -217,7 +220,7 @@ Admin JWTs are HS256 bearer tokens signed with `HIVEMEM_JWT_SECRET` and `"role":
 
 ## Hermes Agent Memory Provider
 
-The `hermes-plugin/` directory contains a Python Hermes Agent memory-provider plugin named `hivemem`. It installs into a Hermes profile under `plugins/memory/hivemem`, selects `memory.provider: hivemem`, and calls the HiveMem REST API for long-term recall and CRUD-style memory tools. The plugin stays Python while Hermes Agent is Python; the TypeScript migration target is the HiveMem service core and shared contracts behind this REST boundary.
+The `hermes-plugin/` directory contains a Python Hermes Agent memory-provider plugin named `hivemem`. The deploy script installs it into a Hermes profile as `$HERMES_HOME/plugins/hivemem`, selects `memory.provider: hivemem`, and calls the HiveMem REST API for long-term recall and CRUD-style memory tools. The plugin stays Python while Hermes Agent is Python; the TypeScript migration target is the HiveMem service core and shared contracts behind this REST boundary.
 
 ```bash
 HERMES_HIVEMEM_TOKEN="$HERMES_HIVEMEM_TOKEN" bash hermes-plugin/scripts/deploy_hermes_plugin.sh \
