@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.9.0] - 2026-11-17
+
+### Added
+
+- `hivemem-server rename-agent --from OLD --to NEW` moves everything an agent ID owns to another
+  ID: memories (private ones into the new owner's collections with their vectors), endorsements,
+  sessions, episodes, conclusions, queue jobs, webhooks, workspace ownership and membership,
+  operation receipts, semantic shadow payloads and the agent record with its credential state.
+  The old ID keeps a disabled record, so its remaining tokens are refused. `--dry-run` and
+  `--verify` are read-only and work while HiveMem runs; the rename itself needs HiveMem stopped,
+  is journaled, idempotent and verified from a fresh read, and refuses a target that already owns
+  data unless `--allow-existing-target` is given. An `agent.rename` audit record is exported.
+  `npm run test:agent-rename` runs it against a real Qdrant.
+
+### Changed
+
+- `scripts/refresh_admin_token.mjs` mints its admin token for the subject `emberpath` instead of
+  the retired `hive-router`. An installation whose data belongs to `hive-router` renames it first.
+
 ## [1.8.1] - 2026-11-17
 
 ### Fixed

@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { InMemoryHiveMemStore, QdrantHiveMemPersistence, type AuthPrincipal, type JsonObject } from "../src/index.js";
+import { applyAgentRename, planAgentRename } from "../src/agent-rename.js";
 
 interface StoredPoint {
   id: string;
@@ -276,6 +277,28 @@ it("replays a durable move journal after interruption while preserving original 
     assert.equal(recovered.memories.filter((item) => item.id === record.id).length, 1);
     assert.equal(recovered.memories.find((item) => item.id === record.id)!.scope, 'private');
     assert.deepEqual([...fake.points.get('agent-a_private_semantic')!.values()][0]!.vector, original.vector);
+  } finally { await new Promise<void>((resolve) => fake.server.close(() => resolve())); rmSync(directory, { recursive: true, force: true }); }
+});
+
+it("resumes an interrupted agent rename from its journal with the original vectors", async () => {
+  const fake = await startFakeQdrant(); const directory = mkdtempSync(join(tmpdir(), 'hivemem-rename-journal-'));
+  try {
+    const first = new QdrantHiveMemPersistence({ url: fake.baseUrl }); await first.load();
+    const source = new InMemoryHiveMemStore({ persistence: first });
+    const record = source.createMemory(principal('hive-router'), { content: 'rename journal fixture', type: 'semantic', scope: 'private' }); await source.flushPersistence();
+    const original = [...fake.points.get('hive-router_private_semantic')!.values()][0]!; original.vector = Array<number>(768).fill(0.25);
+    const journalPath = join(directory, 'pending.json');
+    const interrupted = new QdrantHiveMemPersistence({ url: fake.baseUrl, journalPath, fetchImpl: async (url, init) => { if (String(url).includes('emberpath_private_semantic/points?')) throw new Error('process interruption'); return fetch(url, init); } });
+    const { snapshot } = applyAgentRename(await interrupted.load(), 'hive-router', 'emberpath', new Date().toISOString());
+    await assert.rejects(interrupted.save(snapshot), /process interruption/);
+    // The old copy is already gone and the new one not yet written: only the journal holds it.
+    assert.equal(fake.points.get('hive-router_private_semantic')!.size, 0);
+    assert.equal(existsSync(journalPath), true);
+    const recovered = await new QdrantHiveMemPersistence({ url: fake.baseUrl, journalPath }).load();
+    assert.equal(existsSync(journalPath), false);
+    assert.equal(recovered.memories.find((item) => item.id === record.id)!.agent_id, 'emberpath');
+    assert.deepEqual([...fake.points.get('emberpath_private_semantic')!.values()][0]!.vector, original.vector);
+    assert.equal(planAgentRename(recovered, 'hive-router', 'emberpath').done, true);
   } finally { await new Promise<void>((resolve) => fake.server.close(() => resolve())); rmSync(directory, { recursive: true, force: true }); }
 });
 

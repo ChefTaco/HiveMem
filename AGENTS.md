@@ -55,7 +55,8 @@ npm run check:private
 After a route or schema change, run `npm run generate:openapi` and commit the snapshot.
 `npm --prefix ts-core test` runs only the server suite. Optional harnesses:
 `npm run test:dual-stack`, `npm run test:hermes-dual-stack` (needs a `.venv` with pytest),
-`pytest hermes-plugin/tests`, and the Docker-based `npm run test:webhook-worker` (see README).
+`pytest hermes-plugin/tests`, and the Docker-based `npm run test:webhook-worker` and
+`npm run test:agent-rename` (see README; CI runs the second).
 
 ## Conventions
 
