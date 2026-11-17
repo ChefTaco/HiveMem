@@ -99,9 +99,9 @@ All REST API router paths below are mounted under `/v1`. Dashboard routes are mo
 | Area | Method | Path | Notes |
 | --- | --- | --- | --- |
 | Root | `GET` | `/` | Service identity (`status`, `service`, `implementation`) |
-| Health | `GET` | `/v1/health` | Compatibility status; authenticated callers receive operational details |
+| Health | `GET` | `/v1/health` | Readiness report (same as `/v1/health/ready`); returns 503 when degraded |
 | Health | `GET` | `/v1/health/live` | Dependency-free liveness |
-| Health | `GET` | `/v1/health/ready` | Qdrant + embedding readiness; returns 503 when degraded |
+| Health | `GET` | `/v1/health/ready` | Store and queue-worker readiness; returns 503 when degraded |
 | Health | `GET` | `/v1/health/dependencies` | Dependency report for operator probes |
 | Metrics | `GET` | `/metrics` | Prometheus text metrics (admin JWT or metrics token) |
 | Stats | `GET` | `/v1/stats` | Collection point counts |
@@ -1193,35 +1193,38 @@ POST /v1/agents/{agent_id}/bundle
 
 ```http
 GET /v1/health
+GET /v1/health/ready
+GET /v1/health/dependencies
+GET /v1/health/live
 ```
 
-**Without auth** — returns minimal status:
-
-```json
-{"status": "ok"}
-```
-
-If Qdrant is unreachable, status is `"degraded"`.
-
-**With auth** (`Authorization: Bearer <token>`) — returns full details:
+The health endpoints need no credentials. `/v1/health`, `/v1/health/ready` and
+`/v1/health/dependencies` return the same report: `200` with `"status": "ok"` when the store and
+the queue worker are ready, otherwise `503` with `"status": "degraded"`. `/v1/health/live` only
+reports that the process is running and checks no dependency.
 
 ```json
 {
   "status": "ok",
-  "version": "0.1.0",
-  "uptime_seconds": 3600,
-  "qdrant": {
-    "connected": true,
-    "collections": ["shared_episodic", "shared_semantic"],
-    "client_version": "1.18.0",
-    "server_version": "1.15.0",
-    "error": null
-  },
-  "embedding": { "ready": true, "model_path": "/var/opt/hivemem/models/nomic-embed-text-v1.5.Q8_0.gguf", "vector_dim": 768 },
-  "queue_worker": { "enabled": true, "running": true, "in_flight": 0 },
-  "consolidation_cron": { "enabled": true, "running": true, "last_run_status": "skipped" }
+  "service": "hivemem-ts-core",
+  "implementation": "typescript",
+  "version": "1.8.1",
+  "persistence": { "ready": true, "mode": "qdrant", "pending": false, "last_success": "2026-11-17T09:00:00.000Z" },
+  "worker": { "ready": true, "state": "idle", "managed": true, "enabled": true, "running": false, "pending_jobs": 0, "error": null },
+  "capabilities": { "storage": "qdrant", "retrieval": "deterministic-lexical", "embedding": "hivemem-token-hash-v1", "queue": "managed" },
+  "timestamp": "2026-11-17T09:00:05.000Z",
+  "checks": [
+    { "name": "store", "status": "pass", "message": "qdrant" },
+    { "name": "worker", "status": "pass", "message": "idle" },
+    { "name": "embedding", "status": "pass", "message": "hivemem-token-hash-v1" }
+  ]
 }
 ```
+
+The example is shortened: `worker` and `capabilities` carry more fields, and release metadata
+(`release`, `protocol`) follows `version`. Embeddings are computed in process
+(`hivemem-token-hash-v1`); the server loads no model file. With `HIVEMEM_EMBEDDING_ENDPOINT`
+configured, `capabilities.retrieval` is `lexical-and-configured-semantic`.
 
 ```http
 GET /metrics

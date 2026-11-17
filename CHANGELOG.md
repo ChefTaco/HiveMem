@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- `scripts/deploy_server.sh` no longer creates a model directory or copies a GGUF embedding
+  model to the target. The server loads no model file: embeddings are computed in process, or by
+  the optional `HIVEMEM_EMBEDDING_ENDPOINT`. `HIVEMEM_EMBEDDING_MODEL_PATH` and
+  `HIVEMEM_EMBEDDING_MODEL_SOURCE` are no longer read by the script.
+- `scripts/deploy_server.sh` no longer writes `HIVEMEM_CORS_ORIGINS` into the target env file,
+  and `HIVEMEM_DEPLOY_CORS_ORIGINS` is gone. The server never read it. Existing lines in a
+  target env file are left alone and stay ignored. `.env.example` drops the variable.
+- The `hivemem-server --help` and `issue-token` error examples use `--subject emberpath` (the
+  static memory proxy token for Emberpath) instead of the retired Hive Router.
+- `HIVEMEM_API.md` documents the health report the server returns. The health endpoints need
+  no credentials and return the same report for every caller; the old example showed a GGUF
+  model path and fields the server does not send.
 ## [1.8.0] - 2026-11-16
 
 ### Added

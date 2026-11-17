@@ -46,8 +46,8 @@ issue-token options:
                      cannot carry admin:* or * scopes.
   --ttl <duration>   Lifetime such as 3600, 90m, 12h or 30d (default and maximum 30d)
 
-  Example (the Hive Router's memory proxy token):
-    ${BIN} issue-token --env-file hivemem.env --subject hive-router --role admin
+  Example (Emberpath's static memory proxy token, HIVE_ROUTER_MEMORY_PROXY_TOKEN):
+    ${BIN} issue-token --env-file hivemem.env --subject emberpath --role admin
 
 Required: HIVEMEM_JWT_SECRET (generate one with \`openssl rand -hex 32\`).
 Data is stored in Qdrant (HIVEMEM_QDRANT_URL, default http://127.0.0.1:6333); set

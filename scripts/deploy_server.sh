@@ -26,8 +26,8 @@
 #   internal listener, so the default must stay 18443 to avoid colliding with
 #   the router. Set HIVEMEM_DEPLOY_WEB_PORT only for a standalone, router-less
 #   host. In preserve-remote-env mode (HIVEMEM_PRESERVE_REMOTE_ENV=true) the
-#   remote HIVEMEM_WEB_PORT / HIVEMEM_API_URL / HIVEMEM_CORS_ORIGINS are left
-#   untouched unless a matching explicit HIVEMEM_DEPLOY_* override is provided.
+#   remote HIVEMEM_WEB_PORT / HIVEMEM_API_URL are left untouched unless a
+#   matching explicit HIVEMEM_DEPLOY_* override is provided.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -46,8 +46,6 @@ DEPLOY_WEB_PORT_SET="${HIVEMEM_DEPLOY_WEB_PORT+x}"
 DEPLOY_WEB_PORT="${HIVEMEM_DEPLOY_WEB_PORT:-}"
 DEPLOY_API_URL_SET="${HIVEMEM_DEPLOY_API_URL+x}"
 DEPLOY_API_URL_OVERRIDE="${HIVEMEM_DEPLOY_API_URL:-}"
-DEPLOY_CORS_ORIGINS_SET="${HIVEMEM_DEPLOY_CORS_ORIGINS+x}"
-DEPLOY_CORS_ORIGINS_OVERRIDE="${HIVEMEM_DEPLOY_CORS_ORIGINS:-}"
 
 usage() {
   cat <<EOF
@@ -118,7 +116,6 @@ fi
 [[ -z "$DEPLOY_REFRESH_ADMIN_TOKEN_SET" ]] || HIVEMEM_REFRESH_ADMIN_TOKEN="$DEPLOY_REFRESH_ADMIN_TOKEN"
 [[ -z "$DEPLOY_WEB_PORT_SET" ]] || HIVEMEM_DEPLOY_WEB_PORT="$DEPLOY_WEB_PORT"
 [[ -z "$DEPLOY_API_URL_SET" ]] || HIVEMEM_DEPLOY_API_URL="$DEPLOY_API_URL_OVERRIDE"
-[[ -z "$DEPLOY_CORS_ORIGINS_SET" ]] || HIVEMEM_DEPLOY_CORS_ORIGINS="$DEPLOY_CORS_ORIGINS_OVERRIDE"
 
 PRESERVE_REMOTE_ENV="${HIVEMEM_PRESERVE_REMOTE_ENV:-false}"
 if [[ "$PRESERVE_REMOTE_ENV" != "true" && "$PRESERVE_REMOTE_ENV" != "false" ]]; then
@@ -162,7 +159,6 @@ else
   WEB_PORT_EXPLICIT=false
 fi
 DEPLOY_API_URL="${HIVEMEM_DEPLOY_API_URL:-}"
-DEPLOY_CORS_ORIGINS="${HIVEMEM_DEPLOY_CORS_ORIGINS:-}"
 RUNTIME="${HIVEMEM_RUNTIME:-typescript}"
 if [[ "$RUNTIME" != "typescript" ]]; then
   echo "ERROR: HIVEMEM_RUNTIME must be typescript; got: $RUNTIME" >&2
@@ -170,10 +166,6 @@ if [[ "$RUNTIME" != "typescript" ]]; then
 fi
 STORAGE_PATH="${HIVEMEM_STORAGE_PATH:-/var/opt/hivemem}"
 BACKUP_PATH="${HIVEMEM_BACKUP_PATH:-${STORAGE_PATH}/backups}"
-EMBEDDING_MODEL_PATH="${HIVEMEM_EMBEDDING_MODEL_PATH:-${STORAGE_PATH}/models/nomic-embed-text-v1.5.Q8_0.gguf}"
-EMBEDDING_MODEL_DIR="$(dirname "$EMBEDDING_MODEL_PATH")"
-# Optional: a model file already on the target (for example on shared storage) to copy into place.
-EMBEDDING_MODEL_SOURCE="${HIVEMEM_EMBEDDING_MODEL_SOURCE:-}"
 CERT_HOST="${HIVEMEM_CERT_HOSTNAME:-$TARGET_HOST}"
 CERT_ORG="${HIVEMEM_CERT_ORG:-HiveMem}"
 CERT_COUNTRY="${HIVEMEM_CERT_COUNTRY:-US}"
@@ -461,9 +453,6 @@ if [[ "$PRESERVE_REMOTE_ENV" == "true" ]]; then
   if [[ -n "$DEPLOY_API_URL" ]]; then
     remote_cmd "if grep -q '^HIVEMEM_API_URL=' ${REMOTE_DIR}/.env; then sed -i 's|^HIVEMEM_API_URL=.*|HIVEMEM_API_URL=${DEPLOY_API_URL}|' ${REMOTE_DIR}/.env; else printf '%s\n' 'HIVEMEM_API_URL=${DEPLOY_API_URL}' >> ${REMOTE_DIR}/.env; fi"
   fi
-  if [[ -n "$DEPLOY_CORS_ORIGINS" ]]; then
-    remote_cmd "if grep -q '^HIVEMEM_CORS_ORIGINS=' ${REMOTE_DIR}/.env; then sed -i 's|^HIVEMEM_CORS_ORIGINS=.*|HIVEMEM_CORS_ORIGINS=${DEPLOY_CORS_ORIGINS}|' ${REMOTE_DIR}/.env; else printf '%s\n' 'HIVEMEM_CORS_ORIGINS=${DEPLOY_CORS_ORIGINS}' >> ${REMOTE_DIR}/.env; fi"
-  fi
   remote_cmd "if grep -q '^HIVEMEM_RUNTIME=' ${REMOTE_DIR}/.env; then sed -i 's|^HIVEMEM_RUNTIME=.*|HIVEMEM_RUNTIME=${RUNTIME}|' ${REMOTE_DIR}/.env; else printf '%s\n' 'HIVEMEM_RUNTIME=${RUNTIME}' >> ${REMOTE_DIR}/.env; fi"
   remote_cmd "chmod 600 ${REMOTE_DIR}/.env"
   if [[ "$WEB_PORT_EXPLICIT" == "true" ]]; then
@@ -479,9 +468,6 @@ elif [[ -f "$ENV_FILE" ]]; then
   remote_cmd "if grep -q '^HIVEMEM_WEB_PORT=' ${REMOTE_DIR}/.env; then sed -i 's|^HIVEMEM_WEB_PORT=.*|HIVEMEM_WEB_PORT=${WEB_PORT}|' ${REMOTE_DIR}/.env; else printf '%s\n' 'HIVEMEM_WEB_PORT=${WEB_PORT}' >> ${REMOTE_DIR}/.env; fi"
   if [[ -n "$DEPLOY_API_URL" ]]; then
     remote_cmd "if grep -q '^HIVEMEM_API_URL=' ${REMOTE_DIR}/.env; then sed -i 's|^HIVEMEM_API_URL=.*|HIVEMEM_API_URL=${DEPLOY_API_URL}|' ${REMOTE_DIR}/.env; else printf '%s\n' 'HIVEMEM_API_URL=${DEPLOY_API_URL}' >> ${REMOTE_DIR}/.env; fi"
-  fi
-  if [[ -n "$DEPLOY_CORS_ORIGINS" ]]; then
-    remote_cmd "if grep -q '^HIVEMEM_CORS_ORIGINS=' ${REMOTE_DIR}/.env; then sed -i 's|^HIVEMEM_CORS_ORIGINS=.*|HIVEMEM_CORS_ORIGINS=${DEPLOY_CORS_ORIGINS}|' ${REMOTE_DIR}/.env; else printf '%s\n' 'HIVEMEM_CORS_ORIGINS=${DEPLOY_CORS_ORIGINS}' >> ${REMOTE_DIR}/.env; fi"
   fi
   remote_cmd "if grep -q '^HIVEMEM_RUNTIME=' ${REMOTE_DIR}/.env; then sed -i 's|^HIVEMEM_RUNTIME=.*|HIVEMEM_RUNTIME=${RUNTIME}|' ${REMOTE_DIR}/.env; else printf '%s\n' 'HIVEMEM_RUNTIME=${RUNTIME}' >> ${REMOTE_DIR}/.env; fi"
   remote_cmd "chmod 600 ${REMOTE_DIR}/.env"
@@ -508,11 +494,8 @@ remote_sudo "chown -R ${SSH_USER}:hivemem ${REMOTE_DIR} && chmod -R g+rX ${REMOT
 # The recursive group-read normalization above is for code/runtime assets only.
 # Reassert strict modes on secrets and private keys after it completes.
 remote_sudo "chmod 600 ${REMOTE_DIR}/.env && chmod 640 ${REMOTE_DIR}/certs/server.key"
-# Ensure standalone storage, backup, model, and audit log directories exist
-remote_sudo "mkdir -p ${STORAGE_PATH} ${BACKUP_PATH} ${EMBEDDING_MODEL_DIR} ${STORAGE_PATH}/lib /var/log/hivemem && \
-  if [[ -n '${EMBEDDING_MODEL_SOURCE}' && ! -f ${EMBEDDING_MODEL_PATH} && -f '${EMBEDDING_MODEL_SOURCE}' ]]; then \
-    cp -n '${EMBEDDING_MODEL_SOURCE}' ${EMBEDDING_MODEL_PATH}; \
-  fi && \
+# Ensure standalone storage, backup, and audit log directories exist
+remote_sudo "mkdir -p ${STORAGE_PATH} ${BACKUP_PATH} ${STORAGE_PATH}/lib /var/log/hivemem && \
   chown -R hivemem:hivemem ${STORAGE_PATH} /var/log/hivemem"
 
 SERVICE_UNIT="$REPO_DIR/docker/hivemem-ts.service"
