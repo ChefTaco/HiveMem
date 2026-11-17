@@ -50,6 +50,7 @@ export const HiveAuditPageSchema = z.strictObject({
 export const HIVEMEM_AUDIT_KINDS: ReadonlySet<string> = new Set([
   "api.mutation", "conflict.resolve", "retention", "tombstone", "auth.renew",
   "actor-credential.enroll", "actor-credential.rotate", "actor-credential.renew", "actor-credential.disable",
+  "agent.rename",
 ]);
 
 type Operation = Readonly<Record<string, unknown>>;
@@ -139,6 +140,7 @@ const DETAIL_FIELDS: Readonly<Record<string, string>> = {
   workspace_id: "workspace_id", method: "method", path: "path", status: "status", request_id: "request_id",
   resolved: "resolved", action: "resolution", archived: "archived", operation_id: "operation_id",
   token_generation: "token_generation", expires_at: "expires_at", previous_credential_valid_until: "previous_credential_valid_until",
+  renamed_from: "renamed_from",
 };
 
 function auditDetails(record: Operation): Record<string, string | number | boolean | null> {
@@ -150,7 +152,7 @@ function auditDetails(record: Operation): Record<string, string | number | boole
   }
   if (record.kind === "auth.renew") details.principal = text(record.actor) ?? null;
   const safe = redact(details);
-  // Bounded by construction (13 fields of at most 256 characters); trim defensively anyway.
+  // Bounded by construction (14 fields of at most 256 characters); trim defensively anyway.
   while (Buffer.byteLength(JSON.stringify(safe)) > HIVE_AUDIT_DETAILS_MAX_BYTES && "path" in safe) delete safe.path;
   return safe;
 }

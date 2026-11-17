@@ -12,6 +12,7 @@ import { createHiveMemHandler } from "./server.js";
 import { InMemoryHiveMemStore } from "./store.js";
 import { acquireWriterLock } from "./writer-lock.js";
 import { memoryMigration } from './upgrade.js';
+import { RenameAgentError, runRenameAgent, type RenameAgentOptions } from "./rename-agent-command.js";
 import { captureCheck, delegate, extraArguments } from './release/runtime.js';
 
 const BIN = "hivemem-server";
@@ -31,6 +32,7 @@ Commands:
   upgrade      Delegate a complete managed bundle upgrade to the Hive launcher
   rollback     Delegate managed code rollback or explicitly confirmed data restore
   issue-token  Sign an access token with HIVEMEM_JWT_SECRET and print only the token
+  rename-agent Move everything an agent ID owns to another ID (see below)
 
 Options:
   --env-file <path>  Load environment variables from a dotenv file before reading
@@ -48,6 +50,25 @@ issue-token options:
 
   Example (Emberpath's static memory proxy token, HIVE_ROUTER_MEMORY_PROXY_TOKEN):
     ${BIN} issue-token --env-file hivemem.env --subject emberpath --role admin
+
+rename-agent options (when a service's token subject changes):
+  --from <id>        The agent ID that owns the data now; required
+  --to <id>          The agent ID that will own it; required
+  --dry-run          Print what would move, with counts; read-only, safe while HiveMem runs
+  --verify           Exit 0 when nothing names --from any more, 2 while a rename is
+                     pending; read-only, safe while HiveMem runs
+  --allow-existing-target
+                     Merge into a --to that already owns data (refused otherwise, exit 3)
+  --json             Print the report as JSON
+
+  Without --dry-run or --verify the rename runs: stop HiveMem first (it needs the writer
+  lock). Memories, sessions, episodes, conclusions, queue jobs, webhooks, workspace
+  membership, operation receipts and the agent record with its credential state move to
+  --to; private memories move to --to's collections with their vectors. --from keeps a
+  disabled record, so its old tokens are refused. The write is journaled: an interrupted
+  run completes when rename-agent or HiveMem next starts. Rerunning is safe.
+
+    ${BIN} rename-agent --env-file hivemem.env --from old-subject --to new-subject --dry-run
 
 Required: HIVEMEM_JWT_SECRET (generate one with \`openssl rand -hex 32\`).
 Data is stored in Qdrant (HIVEMEM_QDRANT_URL, default http://127.0.0.1:6333); set
@@ -244,7 +265,48 @@ async function runStart(): Promise<void> {
   }
 }
 
+function parseRenameAgent(argv: readonly string[]): { options: RenameAgentOptions; envFiles: string[] } {
+  const envFiles: string[] = [];
+  let from: string | undefined, to: string | undefined, dryRun = false, verify = false, allowExistingTarget = false, json = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index] ?? "";
+    const equals = arg.startsWith("--") ? arg.indexOf("=") : -1;
+    const name = equals > 0 ? arg.slice(0, equals) : arg;
+    const value = (): string => {
+      const inline = equals > 0 ? arg.slice(equals + 1) : undefined;
+      const next = inline ?? argv[index + 1];
+      if (next === undefined || next === "" || (inline === undefined && next.startsWith("--"))) throw new CliError(`${name} requires a value`);
+      if (inline === undefined) index += 1;
+      return next;
+    };
+    if (name === "rename-agent" && index === argv.indexOf("rename-agent")) continue;
+    if (name === "--from") from = value();
+    else if (name === "--to") to = value();
+    else if (name === "--env-file") envFiles.push(value());
+    else if (arg === "--dry-run") dryRun = true;
+    else if (arg === "--verify") verify = true;
+    else if (arg === "--allow-existing-target") allowExistingTarget = true;
+    else if (arg === "--json") json = true;
+    else throw new CliError(`unknown rename-agent argument ${arg}; run \`${BIN} --help\``);
+  }
+  if (!from || !to) throw new CliError("rename-agent needs --from <id> and --to <id>");
+  if (dryRun && verify) throw new CliError("choose one of --dry-run and --verify");
+  return { options: { from, to, mode: verify ? "verify" : dryRun ? "dry-run" : "apply", allowExistingTarget, json }, envFiles };
+}
+
 async function main(argv: readonly string[]): Promise<void> {
+  if (argv.includes("rename-agent")) {
+    if (argv.some((arg) => arg === "-h" || arg === "--help")) { console.log(USAGE); return; }
+    const { options, envFiles } = parseRenameAgent(argv);
+    loadEnvFiles(envFiles);
+    try {
+      process.exitCode = await runRenameAgent(options);
+    } catch (error) {
+      if (error instanceof RenameAgentError) { console.error(`${BIN}: ${error.message}`); process.exitCode = error.exitCode; return; }
+      throw new CliError((error as Error).message);
+    }
+    return;
+  }
   const extra = extraArguments(argv);
   if (extra) { loadEnvFiles(extra.envFiles); if (extra.command === 'migrate') await memoryMigration(extra.rest); else process.exitCode = await delegate([extra.command, ...extra.rest]); return; }
   const jsonCheck = argv.includes('check') && argv.includes('--json');

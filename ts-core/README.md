@@ -77,12 +77,13 @@ token issuance, registration, and every endpoint.
 | `hivemem-server check` | Validate the configuration and check that Qdrant is reachable. Prints a report and exits 0 when the server can start, 1 otherwise. It does not start the server or write data. |
 | `hivemem-server env-schema` | Print every supported environment variable as JSON (name, default, whether it is required or secret, and a description). |
 | `hivemem-server issue-token --subject <id>` | Sign an access token with `HIVEMEM_JWT_SECRET` and print only the token. See [Issuing tokens](#issuing-tokens). |
+| `hivemem-server rename-agent --from <id> --to <id>` | Move everything an agent ID owns to another ID. See [Renaming an agent](#renaming-an-agent). |
 | `hivemem-server migrate --plan [--json]` / `migrate --backup-dir <dir>` | Inspect, or back up and apply, pending storage migrations. See [Managed upgrades](#managed-upgrades). |
 | `hivemem-server upgrade` / `rollback` | Delegate to the owner-run launcher of a legacy managed install |
 | `hivemem-server --help` / `--version` | Show usage or the version |
 
 `--env-file <path>` loads a dotenv file before the configuration is read. It works with `start`,
-`check` and `issue-token`, can be repeated, and never overrides variables that are already set in
+`check`, `issue-token` and `rename-agent`, can be repeated, and never overrides variables that are already set in
 the environment.
 
 ### Issuing tokens
@@ -113,6 +114,43 @@ server validates it. Tokens stay valid until they expire, the secret is rotated,
 revoked with `POST /v1/auth/revoke`. Issue a new one before the old one expires. A token for an
 agent whose credentials were rotated through the API is rejected; use `POST /v1/auth/tokens` for
 those agents.
+
+### Renaming an agent
+
+HiveMem keys ownership on the token subject (`sub`), with no admin bypass for writes, so a
+service that changes its subject must take its data with it. `rename-agent` does that, for
+example when Emberpath's memory principal changes from its former name `hive-router` to
+`emberpath`:
+
+```bash
+hivemem-server rename-agent --env-file hivemem.env --from hive-router --to emberpath --dry-run
+# stop HiveMem, then
+hivemem-server rename-agent --env-file hivemem.env --from hive-router --to emberpath
+hivemem-server rename-agent --env-file hivemem.env --from hive-router --to emberpath --verify
+```
+
+What moves to `--to`: memories (and private memories into its collections, with their stored
+vectors), endorsements, sessions, episodes and messages, conclusions, queue jobs, webhooks and
+their deliveries, workspace ownership, membership and per-agent overrides, the agent record with
+its credential state (generation, renewal grace, deadline, disabled flag), the operation receipts
+that bind replays to an owner, and the owner in semantic shadow collections (`hivemem_shadow_*`).
+Audit records keep the ID that acted at the time, and an `agent.rename` audit record is added.
+The emptied private collections of `--from` are deleted. `--from` keeps a disabled agent record
+(`metadata.renamed_to`), so a token still issued to it is refused instead of starting a new,
+empty owner: re-issue such tokens, and update links such as `HIVEMEM_OATHWEAVE_SERVICES_JSON`
+`localId`, to the new ID.
+
+| Mode | Behaviour | Exit |
+| --- | --- | --- |
+| `--dry-run` | Read-only plan with counts. Works while HiveMem runs. | 0, or 3 when the target conflicts |
+| `--verify` | Read-only. Done when nothing names `--from` any more (or it never existed). Works while HiveMem runs. | 0 done, 2 pending |
+| (none) | Takes the writer lock, so HiveMem must be stopped. Finishes an interrupted write first, saves through the journaled Qdrant save, deletes the emptied collections, then verifies from a fresh read. | 0, 1 on failure, 3 when the target conflicts |
+
+A `--to` that already owns data (or is disabled) is refused without a write; add
+`--allow-existing-target` to merge both owners. An agent record alone, which any token for the new
+ID creates, is not a conflict. The write is journaled (`pending-write.json` in the storage path),
+so an interrupted run completes when `rename-agent` or HiveMem next starts, and running the
+command again is safe. `--json` prints the report as JSON. Take a backup first.
 
 ## Configuration
 

@@ -45,7 +45,7 @@ const payload = encode({
   aud: 'hivemem-api',
   token_type: 'access',
   jti: randomUUID(),
-  sub: 'hive-router',
+  sub: 'emberpath',
   role: 'admin',
   scope: 'admin:all',
   iat: now,

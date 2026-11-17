@@ -40,7 +40,7 @@ The production runtime is the strict TypeScript core in [`ts-core/`](ts-core), b
 ## Install
 
 Since 1.3, HiveMem ships only as a container image, `ghcr.io/cheftaco/hivemem`, for `linux/amd64`
-and `linux/arm64`. Each release is tagged with its exact version (for example `1.8.1`; there
+and `linux/arm64`. Each release is tagged with its exact version (for example `1.9.0`; there
 is no `latest` tag), and its [GitHub release](https://github.com/ChefTaco/HiveMem/releases)
 records the image digest.
 
@@ -73,13 +73,13 @@ docker network create hivemem
 docker run -d --name hivemem-qdrant --network hivemem -v hivemem-qdrant:/qdrant/storage \
   ghcr.io/cheftaco/hive-qdrant:1.18.3-3
 
-docker run --rm --network hivemem --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.8.1 check
+docker run --rm --network hivemem --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.9.0 check
 docker run -d --name hivemem --network hivemem -p 127.0.0.1:18790:18790 \
-  -v hivemem-data:/data --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.8.1
+  -v hivemem-data:/data --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.9.0
 
 # Once it reports healthy
 curl http://127.0.0.1:18790/v1/health/ready
-docker run --rm --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.8.1 \
+docker run --rm --env-file hivemem.env ghcr.io/cheftaco/hivemem:1.9.0 \
   issue-token --subject operator --role admin
 ```
 
@@ -137,6 +137,12 @@ See [APP_ARCHITECTURE.md](APP_ARCHITECTURE.md) for internals, request flow, data
 ## Security
 
 Security hardening notes, including webhook destination policy, token handling, and reporting guidance, live in [SECURITY.md](SECURITY.md).
+
+The optional `test:agent-rename` drill (Docker and a completed build) runs
+`hivemem-server rename-agent` against a disposable Qdrant container and the native CLI:
+`HIVEMEM_RENAME_TEST_CONFIRM=isolated-synthetic-installation npm run test:agent-rename`. It
+checks that the rename is refused while HiveMem runs and while the target owns data, moves
+private memories with their vectors, is idempotent, and leaves the old subject refused. CI runs it.
 
 The optional `test:webhook-worker` drill requires Docker, OpenSSL, the locally
 available `ghcr.io/cheftaco/hive-qdrant:1.18.3-3` image and a completed build. Run it with

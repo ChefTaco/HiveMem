@@ -237,6 +237,32 @@ export class QdrantHiveMemPersistence implements HiveMemPersistence {
 
   async probe(): Promise<void> { await this.listCollections(); }
 
+  /** Every collection name in this Qdrant. */
+  async collectionNames(): Promise<string[]> { return this.listCollections(); }
+
+  /** Exact number of points in a collection. */
+  async pointCount(collection: string, filter?: JsonObject): Promise<number> {
+    const response = await this.request<{ result?: { count?: unknown } }>("POST", "/collections/" + encodeURIComponent(collection) + "/points/count", { exact: true, ...(filter ? { filter } : {}) });
+    const count = response.result?.count;
+    if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) throw new Error("Invalid Qdrant point count for " + collection);
+    return count;
+  }
+
+  /** Drops a collection this instance no longer writes. */
+  async deleteCollection(collection: string): Promise<void> {
+    await this.request("DELETE", "/collections/" + encodeURIComponent(collection) + "?timeout=60", undefined, [200, 404]);
+    this.knownCollections.delete(collection);
+    this.persisted.delete(collection);
+  }
+
+  /** Sets payload `key` to `to` on every point whose `key` equals `from`; returns how many matched. */
+  async replacePayloadValue(collection: string, key: string, from: string, to: string): Promise<number> {
+    const filter: JsonObject = { must: [{ key, match: { value: from } }] };
+    const matched = await this.pointCount(collection, filter);
+    if (matched > 0) await this.request("POST", "/collections/" + encodeURIComponent(collection) + "/points/payload?wait=true", { payload: { [key]: to }, filter });
+    return matched;
+  }
+
 
   constructor(options: QdrantHiveMemPersistenceOptions) {
     let end = options.url.length;
