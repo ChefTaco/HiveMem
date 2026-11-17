@@ -47,13 +47,13 @@ describe("issue-token request validation", () => {
   });
 
   it("requires a well-formed subject and a known role", () => {
-    assert.match(resolveIssueTokenRequest({}).problems[0] ?? "", /^--subject is required/);
+    assert.match(resolveIssueTokenRequest({}).problems[0] ?? "", /^--subject is required: .*\(for example --subject emberpath\)\.$/);
     assert.match(resolveIssueTokenRequest({ subject: "bad subject" }).problems[0] ?? "", /^--subject must be/);
     assert.match(resolveIssueTokenRequest({ subject: "svc", role: "root" }).problems[0] ?? "", /^--role must be admin or agent/);
   });
 
   it("defaults scopes by role and keeps admin scopes away from agent tokens", () => {
-    assert.deepEqual(resolveIssueTokenRequest({ subject: "hive-router", role: "admin" }).request?.scopes, [ADMIN_SCOPE]);
+    assert.deepEqual(resolveIssueTokenRequest({ subject: "emberpath", role: "admin" }).request?.scopes, [ADMIN_SCOPE]);
     assert.deepEqual(resolveIssueTokenRequest({ subject: "agent-1" }).request?.scopes, [...DEFAULT_AGENT_SCOPES]);
     assert.deepEqual(resolveIssueTokenRequest({ subject: "agent-1", scopes: ["memories:read, context:read", "memories:read"] }).request?.scopes, ["memories:read", "context:read"]);
     assert.match(resolveIssueTokenRequest({ subject: "agent-1", scopes: ["admin:all"] }).problems[0] ?? "", /agent tokens cannot carry wildcard or admin/);
@@ -65,7 +65,7 @@ describe("issue-token request validation", () => {
 describe("issueToken", () => {
   it("signs the claim set the server verifies, matching the deploy-time admin token", () => {
     const key = secret();
-    const request = resolveIssueTokenRequest({ subject: "hive-router", role: "admin", ttl: "1h" }).request;
+    const request = resolveIssueTokenRequest({ subject: "emberpath", role: "admin", ttl: "1h" }).request;
     assert.ok(request);
     const now = Date.now();
     const issued = issueToken(key, request, now);
@@ -73,14 +73,14 @@ describe("issueToken", () => {
     assert.equal(claims.iss, "hivemem");
     assert.equal(claims.aud, "hivemem-api");
     assert.equal(claims.token_type, "access");
-    assert.equal(claims.sub, "hive-router");
+    assert.equal(claims.sub, "emberpath");
     assert.equal(claims.role, "admin");
     assert.equal(claims.scope, "admin:all");
     assert.equal(typeof claims.jti, "string");
     assert.equal(claims.exp, Math.floor(now / 1000) + 3600);
     assert.equal(issued.expiresAt.getTime(), (claims.exp as number) * 1000);
     const principal = verifyBearerToken(`Bearer ${issued.token}`, key);
-    assert.equal(principal.agentId, "hive-router");
+    assert.equal(principal.agentId, "emberpath");
     assert.throws(() => verifyBearerToken(`Bearer ${issued.token}`, secret()), /Invalid JWT signature/);
     assert.notEqual(issueToken(key, request, now).token, issued.token, "each token gets its own jti");
   });
@@ -109,7 +109,7 @@ describe("hivemem-server issue-token", () => {
       const envFile = join(directory, "memory.env");
       await writeFile(envFile, `HIVEMEM_JWT_SECRET=${key}\n`, { mode: 0o600 });
       const before = await readdir(directory);
-      const result = runCli(["issue-token", "--env-file", envFile, "--subject", "hive-router", "--role=admin", "--ttl", "2h"], { HOME: directory, HIVE_HOME: directory });
+      const result = runCli(["issue-token", "--env-file", envFile, "--subject", "emberpath", "--role=admin", "--ttl", "2h"], { HOME: directory, HIVE_HOME: directory });
       assert.equal(result.status, 0, result.stderr);
       assert.equal(result.stderr, "");
       const lines = result.stdout.split("\n");
@@ -153,7 +153,7 @@ describe("hivemem-server issue-token", () => {
     const child = spawn(process.execPath, [cli], { env, stdio: ["ignore", "pipe", "pipe"] });
     const exited = new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)));
     try {
-      const admin = runCli(["issue-token", "--subject", "hive-router", "--role", "admin"], env).stdout.trim();
+      const admin = runCli(["issue-token", "--subject", "emberpath", "--role", "admin"], env).stdout.trim();
       const agent = runCli(["issue-token", "--subject", "agent-1"], env).stdout.trim();
       let ready = false;
       for (let attempt = 0; attempt < 100 && !ready; attempt += 1) {

@@ -122,6 +122,9 @@ describe("hivemem-server command", () => {
     const help = runCli(["--help"], {});
     assert.equal(help.status, 0);
     assert.match(help.stdout, /Usage: hivemem-server/);
+    // The issue-token example names a current suite client, not the retired Hive Router.
+    assert.match(help.stdout, /^ {4}hivemem-server issue-token --env-file hivemem\.env --subject emberpath --role admin$/m);
+    assert.doesNotMatch(help.stdout, /hive-router|Hive Router/);
     const schema = runCli(["env-schema"], {});
     assert.equal(schema.status, 0);
     assert.equal((JSON.parse(schema.stdout) as { service: string }).service, "memory");

@@ -4,7 +4,7 @@ import type { JsonObject } from "./types.js";
 /**
  * `hivemem-server issue-token`: mint an HS256 access token locally with
  * HIVEMEM_JWT_SECRET, for operators and launchers that need a server-side
- * credential (for example the Hive Router's memory proxy token) without an
+ * credential (for example Emberpath's static memory proxy token) without an
  * existing admin token to call `POST /v1/auth/tokens`.
  */
 
@@ -60,7 +60,7 @@ export function signingSecretProblem(secret: string | undefined): string | null 
 export function resolveIssueTokenRequest(input: { subject?: string; role?: string; scopes?: readonly string[]; ttl?: string }): { request: IssueTokenRequest | null; problems: string[] } {
   const problems: string[] = [];
   const subject = input.subject?.trim() ?? "";
-  if (!subject) problems.push("--subject is required: the agent or service identity the token is for (for example --subject hive-router).");
+  if (!subject) problems.push("--subject is required: the agent or service identity the token is for (for example --subject emberpath).");
   else if (!SUBJECT_PATTERN.test(subject)) problems.push("--subject must be 1-128 characters of letters, digits, '.', '_', ':', '@' or '-', starting with a letter or digit.");
 
   const role = input.role ?? "agent";

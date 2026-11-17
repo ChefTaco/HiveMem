@@ -232,7 +232,7 @@ export interface EnvSchema {
   healthPath: string;
   dependencies: Array<{ name: string; envVar: string; default: string; docker: string }>;
   /**
-   * How to mint a bearer token for another service (for example Hive Router's
+   * How to mint a bearer token for another service (for example Emberpath's
    * HIVE_ROUTER_MEMORY_PROXY_TOKEN): run this command with the same env file.
    * It prints only the token on stdout.
    */

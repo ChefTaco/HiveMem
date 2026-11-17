@@ -39,7 +39,7 @@ SAMPLE_MEMORIES = [
 
     # Semantic shared
     {"content": "All agent tokens are long-lived JWTs (1 year). Rotation requires re-registration.", "type": "semantic", "scope": "shared", "tags": ["auth", "policy"]},
-    {"content": "The shared embedding model is configured by HIVEMEM_EMBEDDING_MODEL_PATH and defaults under /var/opt/hivemem/models.", "type": "semantic", "scope": "shared", "tags": ["embeddings", "config"]},
+    {"content": "Semantic recall uses an optional embedding endpoint configured by HIVEMEM_EMBEDDING_ENDPOINT; the server loads no model file.", "type": "semantic", "scope": "shared", "tags": ["embeddings", "config"]},
     {"content": "Deduplication threshold is 0.95 cosine similarity. Lower values produce more aggressive dedup.", "type": "semantic", "scope": "shared", "tags": ["dedup", "config"]},
 ]
 

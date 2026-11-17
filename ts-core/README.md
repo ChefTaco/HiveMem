@@ -92,7 +92,7 @@ token, or a server-side credential for another service, without calling the API:
 
 ```bash
 # Admin token for Emberpath's memory proxy (HIVE_ROUTER_MEMORY_PROXY_TOKEN)
-hivemem-server issue-token --env-file hivemem.env --subject hive-router --role admin
+hivemem-server issue-token --env-file hivemem.env --subject emberpath --role admin
 
 # Agent token with two scopes, valid for 12 hours
 hivemem-server issue-token --env-file hivemem.env --subject agent-1 \
