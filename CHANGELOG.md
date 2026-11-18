@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.1] - 2026-11-18
+
+### Security
+
+- Moves to `@hivemagnus/hive-common` 0.5.1. Every unauthenticated `GET` and `HEAD` request passes
+  its path to the shared health resolver, whose trailing-slash trim took quadratic time on a path
+  of many slashes followed by another character (`/health//…//x`), so such a request held the
+  event loop for a time that grew with the square of the path length. The trim is now one linear
+  pass. A regression test sends such a path with 100,000 slashes.
+
 ## [1.9.0] - 2026-11-17
 
 ### Added
