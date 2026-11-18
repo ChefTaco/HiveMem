@@ -47,8 +47,8 @@ records the image digest.
 **With the Hive suite.** HiveMem is normally installed by `hive.sh`, the
 [Hive suite controller](https://github.com/ChefTaco/hive#install-the-suite), in both the
 `core` and `full` profiles. The controller pins the image by digest from a signed release
-manifest, writes its configuration and secrets, and runs its private Qdrant. Hive 3.11.2 pins
-HiveMem 1.8.1.
+manifest, writes its configuration and secrets, and runs its private Qdrant. Hive 3.12.2 pins
+HiveMem 1.9.0.
 
 **Legacy npm packages.** HiveMem 1.3 and later are not published on npm. The npm package
 `@hivemagnus/hivemem-server` (the name the server source still uses) and the image
