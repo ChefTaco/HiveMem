@@ -766,7 +766,7 @@ Workspace metadata fields: `workspace_id`, `owner_agent_id`, `title`, `descripti
 
 `policy` stores workspace-level `retention_days`, `allowed_scopes`, `reasoning_provider`, `consolidation_cadence_seconds`, `webhooks_enabled`, `sanitization`, and optional `agent_overrides` / `session_overrides`. `GET /settings` returns the effective cascade in workspace -> agent -> session order.
 
-The `default` workspace is open to every agent until it has a record; only an administrator can create that record (its creator becomes the owner and the workspace is then limited to its members). `*` is the all-workspaces wildcard and cannot be used as a workspace ID.
+The `default` workspace is open to every agent until it has a record; only an administrator can create that record (its creator becomes the owner and the workspace is then limited to its members). Until then, reading and writing it are open, but administering it (purge, prune, import, actor-credential enrollment, `all_members` webhooks) needs the admin role. `*` is the all-workspaces wildcard and cannot be used as a workspace ID.
 
 `schedule-dream` queues server-side dream consolidation for `peer_id` (defaults to the caller), optional `session_id`, optional `observer_peer_id`, `include_peer_card`, `force`, and `reason`.
 

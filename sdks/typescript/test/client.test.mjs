@@ -282,6 +282,15 @@ test("HiveMem retries a POST only with one Idempotency-Key for every attempt", a
   assert.notEqual(keys[2], keys[0], "Each logical write gets its own key");
 });
 
+test("HiveMem does not retry a POST to a route that ignores Idempotency-Key", async () => {
+  for (const path of ["/v1/auth/tokens", "/v1/agents/register", "/v1/actor-credentials/" + "a".repeat(64)]) {
+    let calls = 0;
+    const client = new HiveMem({ baseUrl: "https://hive.test", retryBaseDelayMs: 1, fetchImpl: async () => { calls += 1; return reply({ detail: "Bad gateway" }, 502); } });
+    await assert.rejects(client["request"]("POST", path, { body: "{}" }), (error) => error.statusCode === 502);
+    assert.equal(calls, 1, path);
+  }
+});
+
 test("HiveMem keeps a caller's Idempotency-Key", async () => {
   let seen;
   const client = new HiveMem({

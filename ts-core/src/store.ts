@@ -2539,6 +2539,7 @@ export class InMemoryHiveMemStore {
     };
     // Observing every member's writes is a workspace owner or admin right.
     this.assertWorkspacePermission(principal, updated.workspace_id, updated.all_members ? "admin" : 'write');
+    if (updated.all_members) this.assertObservableWorkspace(updated.workspace_id);
     this.webhooks.set(endpointId, { ...this.webhooks.get(endpointId), ...updated, ...(typeof (body as Record<string, unknown>)?.secret === "string" ? { signing_secret: (body as Record<string, string>).secret! } : {}) } as WebhookEndpointRecord);
     this.queuePersistence();
     return updated;
@@ -3641,7 +3642,12 @@ export class InMemoryHiveMemStore {
     if (workspaceId === "*") throw new ForbiddenError("Workspace wildcard requires admin role");
     const workspace = this.workspaces.get(workspaceId);
     if (!workspace || workspace.deleted_at) {
-      if (workspaceId === "default") return;
+      // Without a record the default workspace is open to every agent for reading and writing;
+      // administering it (owner or admin rank) is for HiveMem administrators only.
+      if (workspaceId === "default") {
+        if (workspaceRequiredRank[permission] >= workspaceRequiredRank.admin && !isAdmin(principal)) throw new ForbiddenError("Administering the default workspace requires the admin role");
+        return;
+      }
       throw new NotFoundError("Workspace not found");
     }
     this.assertWorkspaceRecordPermission(principal, workspace, permission);
@@ -3688,6 +3694,7 @@ export class InMemoryHiveMemStore {
       deleted_at: null,
     };
     this.assertWorkspacePermission(principal, parsed.workspace_id, parsed.all_members ? "admin" : "write");
+    if (parsed.all_members) this.assertObservableWorkspace(parsed.workspace_id);
     this.webhooks.set(endpoint.id, endpoint);
     this.queuePersistence();
     return this.publicWebhook(endpoint);
@@ -3745,6 +3752,15 @@ export class InMemoryHiveMemStore {
       const shared = this.memberEventData(endpoint, resourceType, resourceId, data);
       if (shared) this.enqueueWebhookDelivery(endpoint, eventId, eventType, { resource_type: resourceType, resource_id: resourceId, member_event: true, actor_agent_id: principal.agentId, data: shared });
     }
+  }
+
+  /**
+   * Member events are checked against the endpoint owner's workspace role at every delivery, which
+   * needs a workspace record: the implicit default workspace has no members or roles.
+   */
+  private assertObservableWorkspace(workspaceId: string): void {
+    const workspace = this.workspaces.get(workspaceId);
+    if (!workspace || workspace.deleted_at) throw new BadRequestError("all_members needs a workspace record; an administrator creates the workspace first");
   }
 
   /** Whether an endpoint's owner still administers its workspace (so may observe every member). */

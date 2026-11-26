@@ -87,13 +87,25 @@ function recordIdempotentResult(response: ServerResponse, status: number, payloa
 }
 
 /**
- * Authenticated POSTs that change state and accept an Idempotency-Key. Searches, context, chat
- * and embedding are reads; token and credential issuance answer secrets that must not be kept.
+ * POST routes that only read: searches, context, chat, conflict detection and embedding. Matched
+ * as exact routes, so a write whose path merely contains one of these words (an ID such as
+ * `chat-team` or `research-bot`) is still a write.
  */
-function acceptsIdempotencyKey(pathname: string): boolean {
+const READ_POST_ROUTES = new Set([
+  "/v1/memories/search", "/v1/memories/search/text", "/v1/memories/search/hybrid",
+  "/v1/memories/conflicts", "/v1/context", "/v1/chat", "/v1/archive/search", "/v1/embed",
+]);
+export function isReadPost(pathname: string): boolean {
+  return READ_POST_ROUTES.has(pathname) || /^\/v1\/sessions\/[^/]+\/(?:chat|context)$/u.test(pathname);
+}
+
+/**
+ * Authenticated POSTs that change state and accept an Idempotency-Key. Reads need none; token
+ * and credential issuance answer secrets that must not be kept.
+ */
+export function acceptsIdempotencyKey(pathname: string): boolean {
   return pathname.startsWith("/v1/")
-    && pathname !== "/v1/memories/conflicts"
-    && !/search|context|chat|browse|embed/.test(pathname)
+    && !isReadPost(pathname)
     && !pathname.startsWith("/v1/auth/")
     && !pathname.startsWith("/v1/actor-credentials/")
     && pathname !== "/v1/agents/register";
@@ -926,7 +938,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       const neededScope = requiredScope(method, url.pathname);
       if (neededScope) requireScope(principal, neededScope);
       if (rateLimitedPath(method, url.pathname)) searchLimiter.take(principal.agentId);
-      if (!["GET", "HEAD"].includes(method) && url.pathname !== "/v1/memories/conflicts" && !/search|context|chat|browse|embed/.test(url.pathname)) responseAudits.set(response, { principal, path: url.pathname, method, requestId });
+      if (!["GET", "HEAD"].includes(method) && !(method === "POST" && isReadPost(url.pathname))) responseAudits.set(response, { principal, path: url.pathname, method, requestId });
       if (method === "POST" && acceptsIdempotencyKey(url.pathname)) {
         const idempotencyKey = readIdempotencyKey(request.headers);
         if (idempotencyKey !== undefined) {

@@ -4,6 +4,11 @@
 
 ### Upgrade notes
 
+- Administering the implicit `default` workspace (no workspace record) now needs the admin role:
+  purge, prune, workspace import, actor-credential enrollment and `all_members` webhooks there.
+  Reading and writing it stay open to every agent. To delegate, create the `default` workspace
+  record and add the delegate as a workspace admin. An `all_members` webhook needs a workspace
+  record.
 - The write-recovery journal (`pending-write.json`) has a second format for incremental
   checkpoints, `{"version":2,...}`. This release still replays the original format. A release
   before this one refuses to start on a version 2 journal (it does not guess), so if you
@@ -62,6 +67,17 @@
   binding is an N-API prebuild).
 - `docker/docker-compose.yml` runs the release image built from the checkout (profile `full`)
   in place of the retired 1.x `hivemem-server` package example.
+
+### Fixed
+
+- Write POSTs whose path contains a read word in an ID (for example
+  `/v1/peers/research-bot/conclusions` or `/v1/admin/workspaces/chat-team/import`) were treated
+  as reads: they ignored `Idempotency-Key`, so an SDK retry after a 503 could write twice, and
+  they wrote no mutation audit record. Read routes are now matched exactly.
+- Any agent could administer the implicit `default` workspace, for example to create an
+  `all_members` webhook there and receive every member's activity.
+- The TypeScript and Python SDKs no longer retry a POST to the routes that ignore
+  `Idempotency-Key` (`/v1/auth/*`, `/v1/agents/register`, `/v1/actor-credentials/*`).
 
 ### CI
 

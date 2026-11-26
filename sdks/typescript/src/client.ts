@@ -27,6 +27,12 @@ function env(name: string): string | undefined {
 /** Methods whose repetition has the same effect as one request. */
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS", "PUT", "DELETE"]);
 
+/** POST routes that ignore `Idempotency-Key` (token and credential issuance), so a retry could repeat them. */
+function ignoresIdempotencyKey(path: string): boolean {
+  const pathname = path.split("?")[0] ?? "";
+  return /^\/?v1\/auth\//.test(pathname) || /^\/?v1\/actor-credentials\//.test(pathname) || /^\/?v1\/agents\/register$/.test(pathname);
+}
+
 function generateIdempotencyKey(): string {
   const webCrypto = (globalThis as { crypto?: { randomUUID?: () => string; getRandomValues?: (array: Uint8Array) => Uint8Array } }).crypto;
   if (webCrypto?.randomUUID) return webCrypto.randomUUID();
@@ -111,7 +117,7 @@ export class HiveMem {
     if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
     // One key for every attempt, so the server can tell a retry from a new write.
     if (method === "POST" && this.idempotencyKeys && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", generateIdempotencyKey());
-    const retryable = IDEMPOTENT_METHODS.has(method) || headers.has("Idempotency-Key");
+    const retryable = IDEMPOTENT_METHODS.has(method) || (headers.has("Idempotency-Key") && !ignoresIdempotencyKey(path));
 
     let reauthorized = false;
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {

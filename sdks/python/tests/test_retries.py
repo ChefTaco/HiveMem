@@ -111,3 +111,17 @@ def test_async_client_follows_the_same_policy() -> None:
 
     asyncio.run(run())
     assert len(keys) == 2 and keys[0] and keys[0] == keys[1]
+
+
+@pytest.mark.parametrize("path", ["/v1/auth/tokens", "/v1/agents/register", "/v1/actor-credentials/" + "a" * 64])
+def test_post_to_a_route_that_ignores_the_key_is_not_retried(path: str) -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(502, text="Bad gateway")
+
+    with _client(handler) as client:
+        with pytest.raises(HiveMemHTTPError):
+            client.request("POST", path, json={})
+    assert len(calls) == 1
