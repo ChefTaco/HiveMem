@@ -4,6 +4,18 @@ All notable changes to `@hivemagnus/hivemem-sdk`.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-26
+
+### Upgrade notes
+
+- POSTs now carry a generated `Idempotency-Key` and are retried after a 5xx. HiveMem 1.10.0 and
+  later replay the first result; an older server ignores the key, so a retried POST there can
+  write twice. Against a server older than 1.10.0 pass `idempotencyKeys: false`.
+
+### Added
+
+- Options `retryBaseDelayMs`, `retryMaxDelayMs` and `idempotencyKeys` (see below).
+
 ### Fixed
 
 - A POST is no longer retried blindly after a 5xx. Every POST now carries an `Idempotency-Key`
