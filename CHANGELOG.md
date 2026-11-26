@@ -2,8 +2,13 @@
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-26
+
 ### Upgrade notes
 
+- Migrations: none. The storage format is unchanged (`managed-format-1` is still the latest), so
+  a suite upgrade does not need `--allow-migrations` for HiveMem and `migrate` reports it current.
+- TypeScript SDK 1.4.0 ships with this release (see `sdks/typescript/CHANGELOG.md`).
 - Administering the implicit `default` workspace (no workspace record) now needs the admin role:
   purge, prune, workspace import, actor-credential enrollment and `all_members` webhooks there.
   Reading and writing it stay open to every agent. To delegate, create the `default` workspace
