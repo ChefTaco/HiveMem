@@ -15,6 +15,10 @@
 
 ### Added
 
+- Workspace import, `POST /v1/admin/workspaces/{id}/import` (was 501): loads a workspace export
+  (`format_version: 1`) into an existing workspace, keeping record IDs, owners and timestamps.
+  Dry run by default; identical records are left unchanged and differing IDs are skipped or, with
+  `on_conflict: "fail"`, refuse the import. Its body may be up to 64 MiB.
 - `GET /v1/hive/events`, a HiveEvent v1 feed for the suite inbox (administrators): memory
   conflicts, failed webhook deliveries, dead-lettered queue jobs and a stale queue worker, with
   14-day retention. Announce it to HiveXUI with the registry capability

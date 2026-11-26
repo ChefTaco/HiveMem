@@ -11,7 +11,7 @@ export const memoryOperations = [
   { id: 'media', state: 'partial', routes: ['POST /v1/memories/multimodal'], effect: 'Stores media references and metadata only; no image/audio/video inference.' },
   { id: 'http-backup', state: 'unavailable', routes: ['POST /v1/backup'], effect: '501. Use the installation-bound backup script.' },
   { id: 'http-restore', state: 'unavailable', routes: ['POST /v1/restore'], effect: '501. Use isolated staging and the recovery runbook.' },
-  { id: 'workspace-import', state: 'unavailable', routes: ['POST /v1/admin/workspaces/:id/import'], effect: '501. No imported records or pretend success.' },
+  { id: 'workspace-import', state: 'implemented', routes: ['POST /v1/admin/workspaces/:id/import'], effect: 'Workspace export format 1 into an existing workspace; dry run by default; IDs kept, identical records unchanged, differing IDs skipped or refused; durable before success.' },
   { id: 'unscoped-cleanup', state: 'unavailable', routes: ['POST /v1/admin/test-data/cleanup', 'POST /v1/admin/prune'], effect: '501. Use explicit workspace lifecycle preview/apply.' },
   { id: 'critic-review', state: 'unavailable', routes: ['POST /v1/memories/critic/review', 'POST /dashboard/api/memories/critic/review'], effect: '501. No review result is fabricated.' },
   { id: 'provider-comparison', state: 'unavailable', routes: ['POST /v1/reasoning/providers/compare', 'POST /dashboard/api/reasoning/providers/compare'], effect: '501. No providers are queried or ranked.' },
