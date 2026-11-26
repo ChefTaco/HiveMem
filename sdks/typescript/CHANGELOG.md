@@ -4,6 +4,8 @@ All notable changes to `@hivemagnus/hivemem-sdk`.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-26
+
 ### Fixed
 
 - A POST to `/v1/auth/*`, `/v1/agents/register` or `/v1/actor-credentials/*`, which ignore
