@@ -28,8 +28,6 @@
   instead of probing Qdrant and scanning the queue on every request.
 - Qdrant answers are read with a 256 MiB bound, redirects are refused, and a Qdrant error
   message no longer quotes Qdrant's response body, which can echo payload content into logs.
-
-
 - HiveMem no longer builds its own JWKS resolver: the shared Oathweave verifier fetches
   `OATHWEAVE_JWKS_URL` with its cache-age, key-rotation cooldown, no-redirect and timeout
   rules. User and service verifiers each keep their own cache of that one endpoint.
