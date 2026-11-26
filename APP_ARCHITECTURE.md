@@ -15,7 +15,7 @@ suite, HiveXUI is its browser UI and calls the same REST API as every other clie
 | --- | --- | --- |
 | HTTP server | `ts-core/src/server.ts`, `ts-core/src/cli.ts` | One `node:http` or `node:https` listener (`HIVEMEM_WEB_PORT`, default `18790`) serving the REST API, health, `/metrics`, `/v1/capabilities` and the dashboard compatibility routes. HTTPS when `HIVEMEM_TLS_CERT_FILE` and `HIVEMEM_TLS_KEY_FILE` are both set. |
 | Domain store | `ts-core/src/store.ts` | In-memory `HiveMemStore` holding memories, sessions, episodes, workspaces, agents, queue jobs, conclusions and webhooks, with the workspace and ownership checks. |
-| Persistence | `ts-core/src/persistence.ts` | Qdrant snapshot adapter: hydrates the store on start and flushes changes back. `HIVEMEM_TS_PERSISTENCE=qdrant` is the default, and startup fails when Qdrant is unreachable. `memory` is an explicit volatile mode for tests and demos. |
+| Persistence | `ts-core/src/persistence.ts`, `ts-core/src/tracked-map.ts` | Qdrant adapter: hydrates the store on start and flushes changes back. The store's record maps mark the keys each write changes, so a checkpoint writes and journals only those records; the first checkpoint after start, and the first after any failure, save the whole snapshot instead (which also removes stale duplicate copies). Every successful mutation awaits its checkpoint before it answers. `HIVEMEM_TS_PERSISTENCE=qdrant` is the default, and startup fails when Qdrant is unreachable. `memory` is an explicit volatile mode for tests and demos. |
 | Retrieval | `persistence.ts`, `ts-core/src/semantic-index.ts` | Default retrieval is deterministic lexical search over a token-hash embedding (`hivemem-token-hash-v1`, 768 dimensions); no model is loaded. An optional OpenAI-compatible `/v1/embeddings` endpoint (`HIVEMEM_EMBEDDING_*`) maintains a semantic shadow collection (`hivemem_shadow_*`), rebuilt with `ts-core/src/reindex.ts`. |
 | Reasoning and queue | `ts-core/src/reasoning.ts`, `ts-core/src/worker-startup.ts` | Summaries, consolidation, dreams, peer cards, conflict scans and message extraction are deterministic local heuristics with no external LLM call. Writes enqueue jobs in a Qdrant-backed queue run by the managed background worker. |
 | Webhooks | `ts-core/src/webhook-transport.ts` | HMAC-signed deliveries to HTTPS destinations, with delivery history. |
@@ -158,7 +158,8 @@ ts-core/
   src/cli.ts              CLI: start, check, env-schema, migrate, upgrade, rollback, issue-token
   src/server.ts           REST API, health, metrics and dashboard compatibility routes
   src/store.ts            In-memory domain store and access checks
-  src/persistence.ts      Qdrant snapshot load/flush adapter and token-hash embedding
+  src/persistence.ts      Qdrant load, full and incremental checkpoints, journal replay, token-hash embedding
+  src/tracked-map.ts      Record maps that mark changed keys for incremental checkpoints
   src/semantic-index.ts   Optional semantic shadow index
   src/reasoning.ts        Deterministic local reasoning
   src/auth.ts             HS256 JWT signing and verification

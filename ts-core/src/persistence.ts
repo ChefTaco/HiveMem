@@ -36,11 +36,58 @@ export interface HiveMemSnapshot {
   webhookDeliveries: WebhookDeliveryRecord[];
 }
 
+/** What one incremental checkpoint changes in one snapshot collection. */
+export interface HiveMemDeltaPart<T> {
+  /** Records written or changed, as they now are. */
+  upserts: T[];
+  /** IDs of records removed (the store's key: `id`, `agent_id`, `session_id` or `workspace_id`). */
+  deletes: string[];
+}
+
+/** The records changed since the previous checkpoint, per snapshot collection. */
+export type HiveMemDelta = { [K in keyof HiveMemSnapshot]-?: HiveMemDeltaPart<NonNullable<HiveMemSnapshot[K]>[number]> };
+
 export interface HiveMemPersistence {
   readonly kind: "qdrant";
   load(): Promise<HiveMemSnapshot>;
+  /** Make storage hold exactly `snapshot`. */
   save(snapshot: HiveMemSnapshot): Promise<void>;
+  /**
+   * Apply only the changed records. Optional: a store without it saves the whole snapshot each
+   * time. A store calls it only after a full `save` succeeded in this process, and goes back to
+   * a full `save` after any failure.
+   */
+  saveDelta?(delta: HiveMemDelta): Promise<void>;
   probe?(): Promise<void>;
+}
+
+const snapshotKeys = ["operations", "memories", "agents", "conclusions", "episodes", "messages", "sessions", "workspaces", "queueJobs", "webhooks", "webhookDeliveries"] as const satisfies ReadonlyArray<keyof HiveMemSnapshot>;
+
+/** The ID a snapshot record is stored under. */
+export function snapshotRecordKey(key: keyof HiveMemSnapshot, record: unknown): unknown {
+  const raw = record as Record<string, unknown>;
+  if (key === "agents") return raw.agent_id;
+  if (key === "sessions") return raw.session_id;
+  if (key === "workspaces") return raw.workspace_id;
+  return raw.id;
+}
+
+export function isEmptyDelta(delta: HiveMemDelta): boolean {
+  return snapshotKeys.every((key) => delta[key].upserts.length === 0 && delta[key].deletes.length === 0);
+}
+
+/** A delta journal written by this or a later release (format 2), checked before it is replayed. */
+function parseDeltaJournal(journal: Record<string, unknown>): { delta: HiveMemDelta; vectors: Array<[string, number[]]> } {
+  const delta = journal.delta as Record<string, unknown> | undefined;
+  if (!isRecord(delta)) throw new Error("Invalid pending HiveMem journal");
+  for (const key of snapshotKeys) {
+    const part = delta[key];
+    if (!isRecord(part) || !Array.isArray(part.upserts) || !Array.isArray(part.deletes) || !part.deletes.every((id) => typeof id === "string"))
+      throw new Error("Invalid pending HiveMem journal");
+    for (const record of part.upserts) if (!isRecord(record) || typeof snapshotRecordKey(key, record) !== "string") throw new Error("Invalid pending HiveMem journal");
+  }
+  const vectors = Array.isArray(journal.vectors) ? journal.vectors as Array<[string, number[]]> : [];
+  return { delta: delta as unknown as HiveMemDelta, vectors };
 }
 
 export interface QdrantHiveMemPersistenceOptions {
@@ -77,6 +124,12 @@ const vectorDimensions = {
   memory: 768,
   metadata: 4,
 } as const;
+
+/**
+ * The format of an incremental checkpoint journal, `{ version: 2, delta, vectors }`. A full
+ * checkpoint keeps the original `{ snapshot, vectors }` shape, which earlier releases replay.
+ */
+const DELTA_JOURNAL_VERSION = 2;
 
 const metadataCollections = {
   agents: "_agents",
@@ -232,6 +285,8 @@ export class QdrantHiveMemPersistence implements HiveMemPersistence {
   private readonly fetchImpl: typeof fetch;
   private readonly journalPath: string | undefined;
   private readonly persisted = new Map<string, Map<string, QdrantPoint>>();
+  /** Where each memory ID has a point: collection name to point ID (legacy points keep their own IDs). */
+  private readonly memoryLocations = new Map<string, Map<string, string>>();
   private readonly knownCollections = new Set<string>();
   private recovering = false;
   private recoveredVectors = new Map<string, number[]>();
@@ -259,6 +314,7 @@ export class QdrantHiveMemPersistence implements HiveMemPersistence {
   async deleteCollection(collection: string): Promise<void> {
     await this.request("DELETE", "/collections/" + encodeURIComponent(collection) + "?timeout=60", undefined, [200, 404]);
     this.knownCollections.delete(collection);
+    for (const pointId of [...(this.persisted.get(collection)?.keys() ?? [])]) this.untrackPoint(collection, pointId);
     this.persisted.delete(collection);
   }
 
@@ -282,6 +338,7 @@ export class QdrantHiveMemPersistence implements HiveMemPersistence {
 
   async load(): Promise<HiveMemSnapshot> {
     this.persisted.clear();
+    this.memoryLocations.clear();
     const snapshot = emptySnapshot();
     const collections = await this.listCollections();
     const existingCollections = new Set(collections);
@@ -350,7 +407,16 @@ export class QdrantHiveMemPersistence implements HiveMemPersistence {
     snapshot.memories = [...canonical.values()];
     snapshot.operations = existingCollections.has(metadataCollections.operations) ? await this.scrollCollection(metadataCollections.operations) : [];
     if (this.journalPath && existsSync(this.journalPath) && !this.recovering) {
-      const journal = JSON.parse(readFileSync(this.journalPath, "utf8")) as { snapshot?: HiveMemSnapshot; vectors?: Array<[string, number[]]> };
+      const journal = JSON.parse(readFileSync(this.journalPath, "utf8")) as { version?: unknown; snapshot?: HiveMemSnapshot; vectors?: Array<[string, number[]]> };
+      if (isRecord(journal) && journal.version === DELTA_JOURNAL_VERSION) {
+        // An interrupted incremental checkpoint: Qdrant holds the state before it, possibly with
+        // part of it applied. Replaying the delta is idempotent.
+        const { delta, vectors } = parseDeltaJournal(journal);
+        this.recoveredVectors = new Map(vectors);
+        this.recovering = true;
+        try { await this.saveDelta(delta); return await this.load(); } finally { this.recovering = false; }
+      }
+      if (isRecord(journal) && journal.version !== undefined) throw new Error("Unsupported pending HiveMem journal format " + String(journal.version) + "; start the release that wrote it");
       const pending = journal.snapshot ?? journal as unknown as HiveMemSnapshot;
       this.recoveredVectors = new Map(journal.vectors ?? []);
       for (const key of Object.keys(snapshot) as Array<keyof HiveMemSnapshot>) {
@@ -365,7 +431,7 @@ export class QdrantHiveMemPersistence implements HiveMemPersistence {
 
   async save(snapshot: HiveMemSnapshot): Promise<void> {
         const memoryCollections = new Map<string, QdrantPoint[]>();
-    const priorMemories = new Map([...this.persisted.values()].flatMap((items) => [...items.values()]).filter((item) => typeof item.payload.id === "string").map((item) => [item.payload.id, item]));
+    const priorMemories = new Map([...this.persisted].filter(([collection]) => isMemoryCollection(collection)).flatMap(([, items]) => [...items.values()]).filter((item) => typeof item.payload.id === "string").map((item) => [item.payload.id, item]));
     for (const memory of snapshot.memories) {
       const collection = memoryCollection(memory);
       const points = memoryCollections.get(collection) ?? [];
@@ -399,6 +465,72 @@ export class QdrantHiveMemPersistence implements HiveMemPersistence {
     await this.ensureAndUpsert(metadataCollections.operations, vectorDimensions.metadata, (snapshot.operations ?? []).map((record) => point(metadataCollections.operations, String(record.id), record, metadataVector())));
     if (this.journalPath) removeDurableFile(this.journalPath);
     this.recoveredVectors.clear();
+  }
+
+  /**
+   * Write only what changed. The delta, with the vectors of its memories, is fsynced to the
+   * journal first, so an interruption replays it on the next start. Stale copies of moved or
+   * deleted memories go before the new copies are written, as in a full save.
+   */
+  async saveDelta(delta: HiveMemDelta): Promise<void> {
+    const memoryPoints = new Map<string, QdrantPoint[]>();
+    const targets = new Map<string, { collection: string; pointId: string }>();
+    const vectors: Array<[string, number[]]> = [];
+    for (const memory of delta.memories.upserts) {
+      const collection = memoryCollection(memory);
+      const vector = this.recoveredVectors.get(memory.id) ?? this.priorVector(memory.id) ?? deterministicEmbedding(memory.content);
+      const entry = point(collection, memory.id, recordPayload(memory), vector);
+      memoryPoints.set(collection, [...(memoryPoints.get(collection) ?? []), entry]);
+      targets.set(memory.id, { collection, pointId: entry.id });
+      vectors.push([memory.id, vector]);
+    }
+
+    if (this.journalPath) durableJson(this.journalPath, { version: DELTA_JOURNAL_VERSION, delta, vectors });
+
+    // Every copy of a deleted memory, and every copy of a written one except its new point.
+    const stale = new Map<string, string[]>();
+    const markStale = (memoryId: string, keep?: { collection: string; pointId: string }) => {
+      for (const [collection, pointId] of this.memoryLocations.get(memoryId) ?? []) {
+        if (keep && keep.collection === collection && keep.pointId === pointId) continue;
+        stale.set(collection, [...(stale.get(collection) ?? []), pointId]);
+      }
+    };
+    for (const id of delta.memories.deletes) markStale(id);
+    for (const [id, target] of targets) markStale(id, target);
+    for (const [collection, pointIds] of stale) await this.deletePoints(collection, pointIds);
+    for (const [collection, points] of memoryPoints) await this.ensureAndUpsert(collection, vectorDimensions.memory, points, false);
+
+    const metadata = (collection: string, dimensions: number, records: Array<{ id: string; payload: JsonObject }>, deletes: readonly string[]) =>
+      this.applyMetadata(collection, dimensions, records.map((record) => point(collection, record.id, record.payload, dimensions === vectorDimensions.memory ? Array.from({ length: vectorDimensions.memory }, () => 0) : metadataVector())), deletes);
+    await metadata(metadataCollections.agents, vectorDimensions.metadata, delta.agents.upserts.map((record) => ({ id: record.agent_id, payload: recordPayload(record) })), delta.agents.deletes);
+    await metadata(metadataCollections.conclusions, vectorDimensions.memory, delta.conclusions.upserts.map((record) => ({ id: record.id, payload: recordPayload(record) })), delta.conclusions.deletes);
+    await metadata(metadataCollections.episodes, vectorDimensions.metadata, [
+      ...delta.episodes.upserts.map((record) => ({ id: record.id, payload: recordPayload(record, "episode") })),
+      ...delta.messages.upserts.map((record) => ({ id: record.id, payload: recordPayload(record, "message") })),
+    ], [...delta.episodes.deletes, ...delta.messages.deletes]);
+    await metadata(metadataCollections.queue, vectorDimensions.metadata, delta.queueJobs.upserts.map((record) => ({ id: record.id, payload: recordPayload(record) })), delta.queueJobs.deletes);
+    await metadata(metadataCollections.sessions, vectorDimensions.metadata, delta.sessions.upserts.map((record) => ({ id: record.session_id, payload: recordPayload(record) })), delta.sessions.deletes);
+    await metadata(metadataCollections.webhooks, vectorDimensions.metadata, delta.webhooks.upserts.map((record) => ({ id: record.id, payload: recordPayload(record) })), delta.webhooks.deletes);
+    await metadata(metadataCollections.webhookDeliveries, vectorDimensions.metadata, delta.webhookDeliveries.upserts.map((record) => ({ id: record.id, payload: recordPayload(record) })), delta.webhookDeliveries.deletes);
+    await metadata(metadataCollections.workspaces, vectorDimensions.metadata, delta.workspaces.upserts.map((record) => ({ id: record.workspace_id, payload: recordPayload(record) })), delta.workspaces.deletes);
+    await metadata(metadataCollections.operations, vectorDimensions.metadata, delta.operations.upserts.map((record) => ({ id: String(record.id), payload: record })), delta.operations.deletes);
+    if (this.journalPath) removeDurableFile(this.journalPath);
+    this.recoveredVectors.clear();
+  }
+
+  /** The vector of any stored copy of a memory, so a change or a move keeps it. */
+  private priorVector(memoryId: string): number[] | undefined {
+    for (const [collection, pointId] of this.memoryLocations.get(memoryId) ?? []) {
+      const vector = this.persisted.get(collection)?.get(pointId)?.vector;
+      if (vector?.length) return vector;
+    }
+    return undefined;
+  }
+
+  private async applyMetadata(collection: string, dimensions: number, points: QdrantPoint[], deletes: readonly string[]): Promise<void> {
+    const removed = deletes.map((id) => stablePointId(collection, id)).filter((pointId) => this.persisted.get(collection)?.has(pointId) && !points.some((entry) => entry.id === pointId));
+    if (removed.length) await this.deletePoints(collection, removed);
+    if (points.length) await this.ensureAndUpsert(collection, dimensions, points, false);
   }
 
   private async listCollections(): Promise<string[]> {
@@ -451,24 +583,56 @@ export class QdrantHiveMemPersistence implements HiveMemPersistence {
   private rememberPoint(collection: string, item: { id?: unknown; vector?: unknown }, payload: JsonObject): void {
     if (typeof item.id !== "string" && typeof item.id !== "number") throw new Error("Invalid Qdrant point ID");
     if (isMemoryCollection(collection) && item.vector !== undefined && (!Array.isArray(item.vector) || item.vector.length !== vectorDimensions.memory || item.vector.some((value) => typeof value !== "number" || !Number.isFinite(value)))) throw new Error("Unsupported vector schema in " + collection + "; migrate explicitly");
+    this.trackPoint(collection, { id: String(item.id), payload, vector: Array.isArray(item.vector) ? item.vector as number[] : [] });
+  }
+
+  /** Record a point as stored, keeping the memory location index in step. */
+  private trackPoint(collection: string, entry: QdrantPoint): void {
     const records = this.persisted.get(collection) ?? new Map<string, QdrantPoint>();
-    records.set(String(item.id), { id: String(item.id), payload, vector: Array.isArray(item.vector) ? item.vector as number[] : [] });
+    const previous = records.get(entry.id);
+    if (previous) this.untrackLocation(collection, previous);
+    records.set(entry.id, entry);
     this.persisted.set(collection, records);
+    if (isMemoryCollection(collection) && typeof entry.payload.id === "string") {
+      const locations = this.memoryLocations.get(entry.payload.id) ?? new Map<string, string>();
+      locations.set(collection, entry.id);
+      this.memoryLocations.set(entry.payload.id, locations);
+    }
+  }
+
+  private untrackPoint(collection: string, pointId: string): void {
+    const records = this.persisted.get(collection);
+    const previous = records?.get(pointId);
+    if (!records || !previous) return;
+    records.delete(pointId);
+    this.untrackLocation(collection, previous);
+  }
+
+  private untrackLocation(collection: string, entry: QdrantPoint): void {
+    if (!isMemoryCollection(collection) || typeof entry.payload.id !== "string") return;
+    const locations = this.memoryLocations.get(entry.payload.id);
+    if (locations?.get(collection) !== entry.id) return;
+    locations.delete(collection);
+    if (!locations.size) this.memoryLocations.delete(entry.payload.id);
+  }
+
+  private async deletePoints(collection: string, pointIds: readonly string[]): Promise<void> {
+    for (let offset = 0; offset < pointIds.length; offset += 128) {
+      const batch = pointIds.slice(offset, offset + 128);
+      await this.request("POST", "/collections/" + encodeURIComponent(collection) + "/points/delete?wait=true", { points: batch });
+      for (const id of batch) this.untrackPoint(collection, id);
+    }
   }
 
   private async removeMissing(collection: string, points: QdrantPoint[]): Promise<void> {
     const prior = this.persisted.get(collection);
     if (!prior) return;
     const wanted = new Set(points.map((entry) => entry.id));
-    const removed = [...prior.keys()].filter((id) => !wanted.has(id));
-    for (let offset = 0; offset < removed.length; offset += 128) {
-      const batch = removed.slice(offset, offset + 128);
-      await this.request("POST", "/collections/" + encodeURIComponent(collection) + "/points/delete?wait=true", { points: batch });
-      for (const id of batch) prior.delete(id);
-    }
+    await this.deletePoints(collection, [...prior.keys()].filter((id) => !wanted.has(id)));
   }
 
-  private async ensureAndUpsert(collection: string, dimensions: number, points: QdrantPoint[]): Promise<void> {
+  /** Upsert the points whose payload changed; `exhaustive` also removes every other point. */
+  private async ensureAndUpsert(collection: string, dimensions: number, points: QdrantPoint[], exhaustive = true): Promise<void> {
     if (!this.knownCollections.has(collection)) {
       await this.request("PUT", "/collections/" + encodeURIComponent(collection), { vectors: { size: dimensions, distance: "Cosine" } }, [200, 409]);
       this.knownCollections.add(collection);
@@ -479,9 +643,9 @@ export class QdrantHiveMemPersistence implements HiveMemPersistence {
     for (let offset = 0; offset < changed.length; offset += 128) {
       const batch = changed.slice(offset, offset + 128);
       await this.request("PUT", "/collections/" + encodeURIComponent(collection) + "/points?wait=true", { points: batch });
-      for (const entry of batch) prior.set(entry.id, entry);
+      for (const entry of batch) this.trackPoint(collection, entry);
     }
-    await this.removeMissing(collection, points);
+    if (exhaustive) await this.removeMissing(collection, points);
   }
 
   private async request<T = unknown>(method: string, path: string, body?: unknown, okStatuses: readonly number[] = [200]): Promise<T> {

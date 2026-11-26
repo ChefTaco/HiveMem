@@ -7,7 +7,8 @@ import { isDeepStrictEqual } from "node:util";
 import { hiveAdminProvisioningDigest, parseHiveAdminProvisioningRequest, type HiveAdminProvisioningRequest, type HiveAdminProvisioningReceipt } from "./hive-admin-provisioning.js";
 import { auditExportPage, HIVEMEM_AUDIT_KINDS, type HiveAuditRecord } from "./audit-export.js";
 import { memoryCollectionName, privateCollectionNames } from "./collection-names.js";
-import { deterministicEmbedding, type HiveMemPersistence, type HiveMemSnapshot, type PersistedAgentRecord } from "./persistence.js";
+import { deterministicEmbedding, isEmptyDelta, snapshotRecordKey, type HiveMemDelta, type HiveMemPersistence, type HiveMemSnapshot, type PersistedAgentRecord } from "./persistence.js";
+import { TrackedMap } from "./tracked-map.js";
 import {
   DEFAULT_REASONING_SETTINGS,
   buildPeerCard as buildPeerCardConclusions,
@@ -1086,27 +1087,37 @@ function parseWebhookTest(body: unknown): { workspace_id: string; event_type: We
 }
 
 export class InMemoryHiveMemStore {
-  private readonly operations = new Map<string, JsonObject>();
+  private readonly operations = new TrackedMap<JsonObject>();
   private readonly queueOperationsByJob = new Map<string, string>();
   private queueOperationsPrunedAt = 0;
   /** Last audit timestamp (epoch ms): each new audit record is strictly later, so export cursors never skip one. */
   private lastAuditAt = 0;
-  private readonly memories = new Map<string, MemoryRecord>();
-  private readonly agents = new Map<string, AgentInfo & { metadata: JsonObject }>();
-  private readonly conclusions = new Map<string, ConclusionRecord>();
-  private readonly episodes = new Map<string, EpisodeRecord>();
-  private readonly messages = new Map<string, MessageRecord>();
-  private readonly sessions = new Map<string, SessionRecord>();
-  private readonly workspaces = new Map<string, WorkspaceRecord>();
-  private readonly queueJobs = new Map<string, QueueJobRecord>();
-  private readonly webhooks = new Map<string, WebhookEndpointRecord>();
-  private readonly webhookDeliveries = new Map<string, WebhookDeliveryRecord>();
+  private readonly memories = new TrackedMap<MemoryRecord>();
+  private readonly agents = new TrackedMap<AgentInfo & { metadata: JsonObject }>();
+  private readonly conclusions = new TrackedMap<ConclusionRecord>();
+  private readonly episodes = new TrackedMap<EpisodeRecord>();
+  private readonly messages = new TrackedMap<MessageRecord>();
+  private readonly sessions = new TrackedMap<SessionRecord>();
+  private readonly workspaces = new TrackedMap<WorkspaceRecord>();
+  private readonly queueJobs = new TrackedMap<QueueJobRecord>();
+  private readonly webhooks = new TrackedMap<WebhookEndpointRecord>();
+  private readonly webhookDeliveries = new TrackedMap<WebhookDeliveryRecord>();
   private readonly persistence: HiveMemPersistence | null;
   private persistenceQueue: Promise<void> = Promise.resolve();
   private persistenceError: Error | null = null;
   private persistenceDirty = false;
   private persisting = false;
   private lastPersistedAt: string | null = null;
+  /**
+   * The next checkpoint writes the whole snapshot: the first one after start (which also
+   * removes stale duplicate copies a restart found) and the first one after any failure. Every
+   * other checkpoint writes only the records changed since the previous one.
+   */
+  private fullSyncPending = true;
+  /** HIVEMEM_PERSISTENCE_VERIFY=1 (tests): the serialized records as of the last checkpoint. */
+  private readonly verifyShadow: Map<keyof HiveMemSnapshot, Map<string, string>> | null =
+    process.env.HIVEMEM_PERSISTENCE_VERIFY === "1" ? new Map() : null;
+  private verifyScheduled = false;
 
   async persistenceHealth(): Promise<{ ready: boolean; mode: string; pending: boolean; last_success: string | null }> {
     let ready = !this.persistenceError;
@@ -1160,6 +1171,63 @@ export class InMemoryHiveMemStore {
     this.webhookTransport = options.webhookTransport ?? deliverWebhook;
     this.persistence = options.persistence ?? null;
     if (options.snapshot) this.hydrate(options.snapshot);
+    // Loaded records are not changes; the first checkpoint is a full one anyway.
+    for (const [, map] of this.trackedMaps()) map.takeDirty();
+    if (this.verifyShadow) this.verifyTracking(new Map(), true);
+  }
+
+  /** The persisted maps, by snapshot key. */
+  private trackedMaps(): Array<[keyof HiveMemSnapshot, TrackedMap<unknown>]> {
+    return [
+      ["operations", this.operations], ["memories", this.memories], ["agents", this.agents],
+      ["conclusions", this.conclusions], ["episodes", this.episodes], ["messages", this.messages],
+      ["sessions", this.sessions], ["workspaces", this.workspaces], ["queueJobs", this.queueJobs],
+      ["webhooks", this.webhooks], ["webhookDeliveries", this.webhookDeliveries],
+    ] as Array<[keyof HiveMemSnapshot, TrackedMap<unknown>]>;
+  }
+
+  /** The records changed since the last checkpoint: current values, and the keys now gone. */
+  private takeDelta(): { delta: HiveMemDelta; dirty: Map<keyof HiveMemSnapshot, Set<string>> } {
+    const delta = {} as Record<keyof HiveMemSnapshot, { upserts: unknown[]; deletes: string[] }>;
+    const dirty = new Map<keyof HiveMemSnapshot, Set<string>>();
+    for (const [key, map] of this.trackedMaps()) {
+      const keys = map.takeDirty();
+      dirty.set(key, keys);
+      const upserts: unknown[] = [];
+      const deletes: string[] = [];
+      for (const id of keys) {
+        const record = map.get(id);
+        if (record === undefined) deletes.push(id);
+        else upserts.push(key === "agents" ? { ...(record as object) } : record);
+      }
+      delta[key] = { upserts, deletes };
+    }
+    return { delta: delta as unknown as HiveMemDelta, dirty };
+  }
+
+  /**
+   * HIVEMEM_PERSISTENCE_VERIFY=1 only: every record that changed since the last checkpoint must
+   * have been marked by its map, and be stored under its own ID. A change made by editing a
+   * record in place would be missing from the next incremental checkpoint, so it fails here.
+   */
+  private verifyTracking(dirty: Map<keyof HiveMemSnapshot, Set<string>>, initial = false): void {
+    const shadow = this.verifyShadow;
+    if (!shadow) return;
+    const problems: string[] = [];
+    for (const [key, map] of this.trackedMaps()) {
+      const before = shadow.get(key) ?? new Map<string, string>();
+      const after = new Map<string, string>();
+      const marked = dirty.get(key) ?? new Set<string>();
+      for (const [id, record] of map) {
+        const serialized = JSON.stringify(record);
+        after.set(id, serialized);
+        if (snapshotRecordKey(key, record) !== id) problems.push(`${key}: record stored under ${id} names ${String(snapshotRecordKey(key, record))}`);
+        if (!initial && before.get(id) !== serialized && !marked.has(id)) problems.push(`${key}/${id} changed without being marked`);
+      }
+      for (const id of before.keys()) if (!after.has(id) && !marked.has(id)) problems.push(`${key}/${id} removed without being marked`);
+      shadow.set(key, after);
+    }
+    if (problems.length) throw new Error("Incremental persistence tracking missed changes: " + problems.slice(0, 5).join("; "));
   }
 
   snapshot(): HiveMemSnapshot {
@@ -1211,7 +1279,18 @@ export class InMemoryHiveMemStore {
   }
 
   private queuePersistence(): void {
-    if (!this.persistence) return;
+    if (!this.persistence) {
+      if (this.verifyShadow) {
+        if (!this.verifyScheduled) {
+          this.verifyScheduled = true;
+          queueMicrotask(() => { this.verifyScheduled = false; this.verifyTracking(this.takeDelta().dirty); });
+        }
+      } else {
+        // Nothing is written; drop the change marks so they do not accumulate.
+        for (const [, map] of this.trackedMaps()) map.takeDirty();
+      }
+      return;
+    }
     // At most one active and one coalesced pending checkpoint, never an
     // unbounded promise chain retaining a full snapshot for each mutation.
     this.persistenceDirty = true;
@@ -1224,12 +1303,22 @@ export class InMemoryHiveMemStore {
       try {
         while (this.persistenceDirty) {
           this.persistenceDirty = false;
-          const snapshot = structuredClone(this.snapshot());
+          const persistence = this.persistence;
+          if (!persistence) break;
+          // Taken synchronously, before any await, so the checkpoint is one consistent state.
+          const { delta, dirty } = this.takeDelta();
+          const incremental = !this.fullSyncPending && typeof persistence.saveDelta === "function";
           try {
-            await this.persistence?.save(snapshot);
+            this.verifyTracking(dirty);
+            if (!incremental) await persistence.save(structuredClone(this.snapshot()));
+            else if (!isEmptyDelta(delta)) await persistence.saveDelta!(structuredClone(delta));
+            this.fullSyncPending = false;
             this.lastPersistedAt = nowIso();
             this.persistenceError = null;
           } catch (error) {
+            // The changes taken above are not known to be written: the next checkpoint (a retry
+            // or the next write) saves the whole snapshot, which covers them.
+            this.fullSyncPending = true;
             this.persistenceDirty = true;
             this.persistenceError = error instanceof Error ? error : new Error(String(error));
             break;

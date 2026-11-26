@@ -4,6 +4,11 @@
 
 ### Upgrade notes
 
+- The write-recovery journal (`pending-write.json`) has a second format for incremental
+  checkpoints, `{"version":2,...}`. This release still replays the original format. A release
+  before this one refuses to start on a version 2 journal (it does not guess), so if you
+  downgrade, start this release once first so it finishes any interrupted checkpoint. No
+  Qdrant data migration is needed: the collections and payloads are unchanged.
 - Search, context, chat and conflict-scan requests are limited to 600 per principal per minute
   by default (`429` with `Retry-After`). Raise `HIVEMEM_SEARCH_RATE_LIMIT_PER_MINUTE`, or set
   it to `0`, for a principal that legitimately needs more.
@@ -24,6 +29,12 @@
 
 ### Changed
 
+- Persistence is incremental. Each checkpoint used to rewrite and fsync a journal of the whole
+  dataset (every record plus each memory's 768-float vector, about 15 KB per memory) and
+  serialize every payload twice to find changes, so write latency grew with total data. The
+  store now tracks which records each write changes and checkpoints only those, journaling the
+  delta and the vectors of its memories. The first checkpoint after start, and the first after
+  a failed one, still save the whole snapshot, which also cleans up stale duplicate copies.
 - The health routes share one readiness run (in progress, or finished within the last second)
   instead of probing Qdrant and scanning the queue on every request.
 - Qdrant answers are read with a 256 MiB bound, redirects are refused, and a Qdrant error

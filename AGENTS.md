@@ -64,6 +64,9 @@ After a route or schema change, run `npm run generate:openapi` and commit the sn
   regression test.
 - Unsupported operations return 501 and are listed in `GET /v1/capabilities/operations`; never
   fake success. Keep that matrix, HIVEMEM_API.md and the OpenAPI snapshot in step.
+- Replace store records with `map.set(id, { ...record, ... })`; never edit one in place.
+  Checkpoints are incremental and write only the keys the maps marked; `npm --prefix ts-core
+  test` runs with `HIVEMEM_PERSISTENCE_VERIFY=1`, which fails a change that bypassed `set`.
 - Keep compatibility paths (the `/dashboard/*` routes, legacy token shapes) unless a change says
   why they go. Storage migrations in `ts-core/src/migrations/` are append-only.
 - Conventional Commits. Release the server by pushing a `vX.Y.Z` tag:
