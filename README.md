@@ -32,7 +32,7 @@ The production runtime is the strict TypeScript core in [`ts-core/`](ts-core), b
 - **Semantic, text, and hybrid search.** Vector, full-text, and hybrid endpoints share a structured filter DSL with logical operators, `metadata.*` paths, valid-time `as_of` filtering, explainability, and optional MMR diversity controls.
 - **Source-cited chat & context.** `POST /v1/chat` and `/v1/context` return deterministic, source-cited answers and token-budgeted prompt packages without calling an external LLM.
 - **Async reasoning queue.** Memory writes enqueue summary, peer-card, representation, conflict-scan, consolidation, dream, sleep, and forgetting-review jobs to a Qdrant-backed queue with token-threshold batching, cooldown awareness, worker heartbeats, stale-lock recovery, and retention/archive summaries.
-- **Operational telemetry and governance.** Consolidation cron runs and cursors persist separately from queue jobs; `/metrics` exposes request, embedding, Qdrant, queue, consolidation, and webhook metrics; authenticated health reports versions and subsystem readiness; admin audit APIs query memory write history, and workspace export produces a portable bundle without webhook secrets (import is not available in this runtime).
+- **Operational telemetry and governance.** Consolidation cron runs and cursors persist separately from queue jobs; `/metrics` exposes request, embedding, Qdrant, queue, consolidation, and webhook metrics; health (no credentials needed) reports versions and subsystem readiness; admin audit APIs query memory write history, and workspace export produces a portable bundle without webhook secrets (import is not available in this runtime).
 - **Webhooks.** REST-managed endpoints with timestamped HMAC signatures and delivery nonces cover `memory.created`, `session.created`, `summary.updated`, `peer_card.updated`, `conflict.detected`, `queue.empty`, and `webhook.test`.
 - **Operator and agent surfaces.** Python/TypeScript SDKs, REST helper scripts, the Hermes Agent memory-provider plugin, and the memory pages of [HiveXUI](https://github.com/ChefTaco/HiveXUI), the suite UI, all use the REST API.
 - **Compatibility tests.** The TypeScript core uses deterministic node:test coverage for REST compatibility, Qdrant hydration, reasoning, dashboard compatibility routes, and the Hermes plugin contract.
@@ -47,8 +47,9 @@ records the image digest.
 **With the Hive suite.** HiveMem is normally installed by `hive.sh`, the
 [Hive suite controller](https://github.com/ChefTaco/hive#install-the-suite), in both the
 `core` and `full` profiles. The controller pins the image by digest from a signed release
-manifest, writes its configuration and secrets, and runs its private Qdrant. Hive 3.12.3 pins
-HiveMem 1.9.1.
+manifest, writes its configuration and secrets, and runs its private Qdrant. The HiveMem version
+a suite release installs is the one in its signed release manifest; see the
+[current Hive release](https://github.com/ChefTaco/hive/releases).
 
 **Legacy npm packages.** HiveMem 1.3 and later are not published on npm. The npm package
 `@hivemagnus/hivemem-server` (the name the server source still uses) and the image
