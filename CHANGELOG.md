@@ -49,6 +49,8 @@
 
 ### Changed
 
+- `@hivemagnus/hive-common` 0.7.0: the per-principal search limit now uses its `/rate-limit`
+  token bucket and suite `rate_limited` error (same budget, `Retry-After` and envelope code).
 - Persistence is incremental. Each checkpoint used to rewrite and fsync a journal of the whole
   dataset (every record plus each memory's 768-float vector, about 15 KB per memory) and
   serialize every payload twice to find changes, so write latency grew with total data. The
