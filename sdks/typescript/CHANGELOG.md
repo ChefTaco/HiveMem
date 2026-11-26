@@ -2,6 +2,18 @@
 
 All notable changes to `@hivemagnus/hivemem-sdk`.
 
+## [Unreleased]
+
+### Fixed
+
+- A POST is no longer retried blindly after a 5xx. Every POST now carries an `Idempotency-Key`
+  (generated, the same on every attempt, unless the caller supplies one) and is retried only
+  with it, so a HiveMem server with idempotency support replays the first result instead of
+  creating a duplicate memory, webhook or job. `idempotencyKeys: false` sends no key and never
+  retries a POST. GET, HEAD, OPTIONS, PUT and DELETE are retried as before; 501 is not retried.
+- Retries wait with exponential backoff and jitter (`retryBaseDelayMs`, default 200;
+  `retryMaxDelayMs`, default 2000) and honour `Retry-After` up to that cap. They were immediate.
+
 ## [1.2.1] - 2026-11-13
 
 ### Fixed

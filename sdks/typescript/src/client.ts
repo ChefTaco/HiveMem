@@ -24,12 +24,36 @@ function env(name: string): string | undefined {
   return proc.process?.env?.[name];
 }
 
+/** Methods whose repetition has the same effect as one request. */
+const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS", "PUT", "DELETE"]);
+
+function generateIdempotencyKey(): string {
+  const webCrypto = (globalThis as { crypto?: { randomUUID?: () => string; getRandomValues?: (array: Uint8Array) => Uint8Array } }).crypto;
+  if (webCrypto?.randomUUID) return webCrypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (webCrypto?.getRandomValues) webCrypto.getRandomValues(bytes);
+  else for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** A `Retry-After` value in milliseconds, or undefined when absent or unreadable. */
+function retryAfterMs(response: Response): number | undefined {
+  const value = response.headers.get("retry-after")?.trim();
+  if (!value) return undefined;
+  if (/^\d+$/.test(value)) return Number(value) * 1000;
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
+}
+
 export class HiveMem {
   readonly baseUrl: string;
   token?: string;
   readonly workspaceId: string;
   readonly timeoutMs: number;
   readonly maxRetries: number;
+  readonly retryBaseDelayMs: number;
+  readonly retryMaxDelayMs: number;
+  readonly idempotencyKeys: boolean;
   private readonly fetchImpl: typeof fetch;
   private readonly requestIdProvider?: () => string;
   private readonly authRefresh?: () => string | undefined | Promise<string | undefined>;
@@ -44,6 +68,9 @@ export class HiveMem {
     this.workspaceId = options.workspaceId ?? env("HIVEMEM_WORKSPACE_ID") ?? "default";
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxRetries = options.maxRetries ?? 2;
+    this.retryBaseDelayMs = options.retryBaseDelayMs ?? 200;
+    this.retryMaxDelayMs = options.retryMaxDelayMs ?? 2_000;
+    this.idempotencyKeys = options.idempotencyKeys ?? true;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.requestIdProvider = options.requestIdProvider;
     this.authRefresh = options.authRefresh;
@@ -55,6 +82,14 @@ export class HiveMem {
 
   private url(path: string): string {
     return `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+  }
+
+  /** Exponential backoff with jitter; a server's `Retry-After` wins, capped at `retryMaxDelayMs`. */
+  private retryDelayMs(attempt: number, response: Response): number {
+    const requested = retryAfterMs(response);
+    if (requested !== undefined) return Math.min(requested, this.retryMaxDelayMs);
+    const ceiling = Math.min(this.retryMaxDelayMs, this.retryBaseDelayMs * 2 ** attempt);
+    return ceiling / 2 + Math.random() * (ceiling / 2);
   }
 
   private async request<T>(method: string, path: string, init: RequestInit = {}, params?: Record<string, unknown>): Promise<T> {
@@ -74,6 +109,9 @@ export class HiveMem {
       if (provided) this.token = provided;
     }
     if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
+    // One key for every attempt, so the server can tell a retry from a new write.
+    if (method === "POST" && this.idempotencyKeys && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", generateIdempotencyKey());
+    const retryable = IDEMPOTENT_METHODS.has(method) || headers.has("Idempotency-Key");
 
     let reauthorized = false;
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
@@ -101,9 +139,12 @@ export class HiveMem {
             continue;
           }
         }
-        if (response.status >= 500 && attempt < this.maxRetries) {
+        if (retryable && response.status >= 500 && response.status !== 501 && attempt < this.maxRetries) {
           // Release the connection: an unread body keeps it checked out until garbage collection.
           await response.body?.cancel().catch(() => undefined);
+          clearTimeout(timeout);
+          const delay = this.retryDelayMs(attempt, response);
+          if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
           continue;
         }
         if (!response.ok) {

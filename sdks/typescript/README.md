@@ -4,7 +4,7 @@ TypeScript client for [HiveMem](https://github.com/ChefTaco/HiveMem), the shared
 
 - Zero runtime dependencies; uses the platform `fetch` (Node.js 18.17+, Deno, Bun, browsers, edge runtimes).
 - ESM-only, with bundled type declarations.
-- Retries 5xx responses, supports request timeouts, request IDs, extra headers, and token providers that refresh on 401.
+- Retries 5xx responses with backoff and jitter (POSTs only with an `Idempotency-Key`, which it generates), supports request timeouts, request IDs, extra headers, and token providers that refresh on 401.
 - Never follows redirects (`redirect: "error"`), so the bearer token stays with the configured origin.
 
 ## Install
@@ -50,7 +50,10 @@ const messages = context.toOpenAI(); // or context.toAnthropic()
 | `token` | `HIVEMEM_TOKEN`, then `HIVEMEM_MCP_TOKEN` | none |
 | `workspaceId` | `HIVEMEM_WORKSPACE_ID` | `default` |
 | `timeoutMs` | | `30000` |
-| `maxRetries` | | `2` (5xx responses only) |
+| `maxRetries` | | `2`: retries after a 5xx other than 501; GET, HEAD, OPTIONS, PUT and DELETE always, a POST only when it carries an `Idempotency-Key` |
+| `retryBaseDelayMs` | | `200`: first retry delay, doubling with jitter per attempt |
+| `retryMaxDelayMs` | | `2000`: longest delay, also the cap on a server's `Retry-After` |
+| `idempotencyKeys` | | `true`: send a generated `Idempotency-Key` on every POST without one, so the server replays rather than repeats a retried write; `false` sends none and never retries a POST |
 | `fetchImpl` | | global `fetch` |
 | `requestIdProvider` | | sends `X-Request-ID` when set |
 | `authRefresh` | | called before each attempt; a returned token replaces the current one |
