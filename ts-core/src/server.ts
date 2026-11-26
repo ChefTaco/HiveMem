@@ -237,7 +237,7 @@ function scopeMatches(granted: string, required: string): boolean {
  * The scopes both `granted` and `ceiling` allow: a granted scope the ceiling covers, and a
  * ceiling scope a granted wildcard covers. No ceiling keeps `granted` unchanged.
  */
-export function withinCeiling(granted: readonly string[], ceiling: readonly string[] | undefined): string[] {
+function withinCeiling(granted: readonly string[], ceiling: readonly string[] | undefined): string[] {
   if (!ceiling) return [...granted];
   const kept = new Set<string>();
   for (const scope of granted) if (ceiling.some((limit) => scopeMatches(limit, scope))) kept.add(scope);
