@@ -8,33 +8,76 @@ permissions:
   contents: read
 jobs:
   verify:
+    name: Verify (Node ${{ matrix.node-version }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # The supported floor and the runtime the image ships (Dockerfile RUNTIME_IMAGE).
+        node-version: [24.22.3, 26.13.1]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.22.3
+          node-version: ${{ matrix.node-version }}
+          package-manager-cache: false
       - run: sudo apt-get update -qq && sudo apt-get install -y ripgrep
       - run: npm run bootstrap
+      - name: Audit production dependencies
+        run: |
+          npm --prefix ts-core audit --omit=dev --audit-level=high
+          npm --prefix sdks/typescript audit --omit=dev --audit-level=high
+          npm --prefix tooling/release audit --omit=dev --audit-level=high
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
       - run: npm run check:openapi
       - run: npm run scan:secrets
       - run: npm run check:private
+  python:
+    name: Python SDK and Hermes plugin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+          package-manager-cache: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - name: Create the test virtual environment
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --quiet --upgrade pip
+          .venv/bin/python -m pip install --quiet -r sdks/python/requirements-test.txt
+          .venv/bin/python -m pip install --quiet --no-deps ./sdks/python
+      - run: npm run bootstrap
+      # The Hermes contract tests start the built TypeScript server.
+      - run: npm run build:ts-core
+      - name: Python SDK tests
+        run: .venv/bin/python -m pytest -q sdks/python/tests
+      # Includes the dual-stack contract (npm run test:hermes-dual-stack) against the built server.
+      # The tests marked `hermes` need a Hermes Agent checkout and skip here.
+      - name: Hermes plugin tests
+        run: .venv/bin/python -m pytest -q hermes-plugin/tests
   agent-rename:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.22.3
+          node-version: 26.13.1
+          package-manager-cache: false
       - run: npm run bootstrap
       - run: npm run build
       - run: npm run test:agent-rename

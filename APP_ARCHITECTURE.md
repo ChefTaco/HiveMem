@@ -168,7 +168,7 @@ ts-core/
 Dockerfile                Release container image
 docs/                     OpenAPI, UI API, Oathweave and decision records
 docker/
-  docker-compose.yml      Local development Qdrant (its hivemem service is the 1.x example)
+  docker-compose.yml      Local development Qdrant, plus the release image under the `full` profile
   hivemem-ts.service      Native systemd unit
 scripts/                  Deploy, backup, prune, registration and contract export helpers
 hermes-plugin/            Python Hermes Agent memory provider

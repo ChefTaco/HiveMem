@@ -1,7 +1,8 @@
 ARG RUNTIME_IMAGE=ghcr.io/cheftaco/hive-node-runtime:26.13.1-1@sha256:7671ab0a702c273c37a84d089ba6fe821c6d85cbeab888e7e43522a057da5e6d
-FROM node:24.22.3-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS build
+# Build on the Node major the runtime ships. Installs run with --ignore-scripts, so nothing compiles:
+# @photostructure/sqlite loads its bundled N-API prebuild, which is ABI-stable across Node majors.
+FROM node:26.13.1-slim@sha256:abe7e5a82b61a8ef67b315b85497c9e65173387ccf2f4a029248184b8e020be5 AS build
 WORKDIR /build
-RUN apt-get update -qq && apt-get install -y --no-install-recommends python3 make g++ ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN npm --prefix ts-core ci --ignore-scripts && npm --prefix tooling/release ci --ignore-scripts && npm --prefix ts-core run build && npm --prefix ts-core prune --omit=dev --ignore-scripts
 

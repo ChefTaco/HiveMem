@@ -121,6 +121,10 @@ curl http://localhost:18790/v1/health
 curl http://localhost:18790/v1/health/ready
 ```
 
+To run the release image from this checkout instead of step 4, add the `full` profile:
+`docker compose -f docker/docker-compose.yml --profile full up -d --build` (it reads `.env`
+from step 3 and overrides its storage path and Qdrant URL for the container).
+
 The default development URL is `http://localhost:18790`. Production deployments typically expose HTTPS on `HIVEMEM_WEB_PORT` (commonly `443`) behind a hostname of your choice; refer to clients through `HIVEMEM_API_URL` rather than a hard-coded host.
 
 ## Architecture
