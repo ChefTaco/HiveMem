@@ -8,9 +8,17 @@ import { signToken, verifyBearerToken } from '../src/auth.js';
 import type { AuthPrincipal } from '../src/types.js';
 const secret = 'b'.repeat(64);
 const owner: AuthPrincipal = { agentId: 'fixture-owner', scopes: ['admin:agents', 'memories:read'], rawClaims: { role: 'agent' } };
+/** A store whose default workspace has a record in which the owner fixture is an admin member. */
+function fixtureStore(): InMemoryHiveMemStore {
+  const store = new InMemoryHiveMemStore();
+  const operator: AuthPrincipal = { agentId: 'fixture-operator', scopes: ['*'], rawClaims: { role: 'admin' } };
+  store.createWorkspace(operator, { workspace_id: 'default', title: 'Default' });
+  store.upsertWorkspaceMember(operator, 'default', owner.agentId, { role: 'admin' });
+  return store;
+}
 const body = () => ({ action: 'enroll', agent_id: 'fixture-agent', display_name: 'Fixture Agent', scopes: ['memories:read'], workspace_id: 'default', expires_at: new Date(Date.now() + 3600_000).toISOString() });
 test('native enrollment replays exact issuance after snapshot restore, with encrypted bounded owner-bound receipts', () => {
-  const store = new InMemoryHiveMemStore(), policy = body(), first = store.actorCredentials(owner, 'a'.repeat(64), policy, secret);
+  const store = fixtureStore(), policy = body(), first = store.actorCredentials(owner, 'a'.repeat(64), policy, secret);
   assert.equal(typeof first.token, 'string');
   const snapshot = structuredClone(store.snapshot());
   assert(!JSON.stringify(snapshot).includes(String(first.token)));
@@ -24,7 +32,7 @@ test('native enrollment replays exact issuance after snapshot restore, with encr
   assert.throws(() => restored.actorCredentials(owner, 'a'.repeat(64), policy, secret), /expired or acknowledged/);
 });
 test('scope and workspace authority are enforced before mutation; rotations and containment revoke older credentials without extending deadlines', () => {
-  const store = new InMemoryHiveMemStore(), policy = body(), before = structuredClone(store.snapshot());
+  const store = fixtureStore(), policy = body(), before = structuredClone(store.snapshot());
   assert.throws(() => store.actorCredentials({ ...owner, scopes: ['admin:agents'] }, 'a'.repeat(64), policy, secret), /does not hold/);
   assert.deepEqual(store.snapshot(), before);
   assert.throws(() => store.actorCredentials(owner, 'a'.repeat(64), { ...policy, workspace_id: 'missing' }, secret), /Workspace not found/);
@@ -42,7 +50,7 @@ test('scope and workspace authority are enforced before mutation; rotations and 
   assert.throws(() => store.actorCredentials(owner, 'd'.repeat(64), rotation, secret), /Disabled/);
 });
 test('HTTP credential operation authorizes direct scope and replays without a second enrollment', async () => {
-  const store = new InMemoryHiveMemStore();
+  const store = fixtureStore();
   const server = createServer(createHiveMemHandler({ store, jwtSecret: secret })).listen(0, '127.0.0.1');
   await once(server, 'listening'); const address = server.address(); assert(address && typeof address === 'object');
   const target = `http://127.0.0.1:${address.port}/v1/actor-credentials/` + 'a'.repeat(64), policy = body();
@@ -58,7 +66,7 @@ test('HTTP credential operation authorizes direct scope and replays without a se
   } finally { server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
 });
 test('renewal sets a new deadline for an active member, keeps the previous credential only for its grace period, and is audited', () => {
-  const store = new InMemoryHiveMemStore(), policy = body(), first = store.actorCredentials(owner, 'a'.repeat(64), policy, secret);
+  const store = fixtureStore(), policy = body(), first = store.actorCredentials(owner, 'a'.repeat(64), policy, secret);
   const later = new Date(Date.now() + 600 * 3600_000).toISOString();
   const renewal = { ...policy, action: 'renew', expires_at: later, grace_seconds: 120 };
   const renewed = store.actorCredentials(owner, 'b'.repeat(64), renewal, secret);
@@ -92,7 +100,7 @@ test('renewal sets a new deadline for an active member, keeps the previous crede
   assert.throws(() => store.assertCredentialActive(verifyBearerToken('Bearer ' + renewed.token, secret)), /rotated/);
 });
 test('renewal cannot widen scopes, reach non-members or disabled agents, exceed 720 hours or carry grace on other actions', () => {
-  const store = new InMemoryHiveMemStore(), policy = body();
+  const store = fixtureStore(), policy = body();
   const wide: AuthPrincipal = { ...owner, scopes: ['admin:agents', 'memories:read', 'memories:write'] };
   store.actorCredentials(wide, 'a'.repeat(64), policy, secret);
   const renewal = { ...policy, action: 'renew', expires_at: new Date(Date.now() + 24 * 3600_000).toISOString() };
@@ -109,7 +117,7 @@ test('renewal cannot widen scopes, reach non-members or disabled agents, exceed 
   assert.throws(() => store.actorCredentials(wide, 'd'.repeat(64), renewal, secret), /Disabled agents cannot renew/);
 });
 test('a credential in its grace period refreshes only into the same, expiring generation', async () => {
-  const store = new InMemoryHiveMemStore(), policy = body();
+  const store = fixtureStore(), policy = body();
   const first = store.actorCredentials(owner, 'a'.repeat(64), policy, secret);
   store.actorCredentials(owner, 'b'.repeat(64), { ...policy, action: 'renew', grace_seconds: 60, expires_at: new Date(Date.now() + 48 * 3600_000).toISOString() }, secret);
   const server = createServer(createHiveMemHandler({ store, jwtSecret: secret })).listen(0, '127.0.0.1');

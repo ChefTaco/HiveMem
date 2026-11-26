@@ -4,6 +4,11 @@ All notable changes to `@hivemagnus/hivemem-sdk`.
 
 ## [Unreleased]
 
+### Fixed
+
+- A POST to `/v1/auth/*`, `/v1/agents/register` or `/v1/actor-credentials/*`, which ignore
+  `Idempotency-Key`, is no longer retried after a 5xx.
+
 ### Added
 
 - `WebhookEndpoint.all_members`, the workspace-level webhook flag.

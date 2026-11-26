@@ -19,6 +19,9 @@ import httpx
 from hivemem_sdk.context import ContextPackage
 from hivemem_sdk.errors import HiveMemHTTPError
 
+# POST routes that ignore Idempotency-Key (token and credential issuance): a retry could repeat them.
+_KEY_IGNORED_ROUTE = re.compile(r"^/?v1/(?:auth/|actor-credentials/|agents/register$)")
+
 # Methods whose repetition has the same effect as one request.
 _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
 
@@ -139,7 +142,7 @@ class _BaseClient:
             headers["X-Request-ID"] = self.request_id_provider()
         return headers
 
-    def _prepare_retry(self, method: str, kwargs: dict[str, Any]) -> bool:
+    def _prepare_retry(self, method: str, kwargs: dict[str, Any], path: str = "") -> bool:
         """Add an Idempotency-Key to a POST when enabled; return whether the request may be retried."""
         method = method.upper()
         headers = dict(kwargs.get("headers") or {})
@@ -149,7 +152,7 @@ class _BaseClient:
             headers["Idempotency-Key"] = str(uuid.uuid4())
             kwargs["headers"] = headers
             has_key = True
-        return method in _IDEMPOTENT_METHODS or has_key
+        return method in _IDEMPOTENT_METHODS or (has_key and not _KEY_IGNORED_ROUTE.match(path.split("?", 1)[0]))
 
     def _should_retry(self, retryable: bool, response: httpx.Response, attempt: int) -> bool:
         return retryable and response.status_code >= 500 and response.status_code != 501 and attempt < self.max_retries
@@ -210,7 +213,7 @@ class HiveMemClient(_BaseClient):
         self.close()
 
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
-        retryable = self._prepare_retry(method, kwargs)
+        retryable = self._prepare_retry(method, kwargs, path)
         self._provide_token(False)
         reauthorized = False
         attempt = 0
@@ -413,7 +416,7 @@ class AsyncHiveMemClient(_BaseClient):
         await self.close()
 
     async def request(self, method: str, path: str, **kwargs: Any) -> Any:
-        retryable = self._prepare_retry(method, kwargs)
+        retryable = self._prepare_retry(method, kwargs, path)
         self._provide_token(False)
         reauthorized = False
         attempt = 0
