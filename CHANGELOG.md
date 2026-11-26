@@ -4,7 +4,14 @@
 
 ### Upgrade notes
 
-
+- The write-recovery journal (`pending-write.json`) has a second format for incremental
+  checkpoints, `{"version":2,...}`. This release still replays the original format. A release
+  before this one refuses to start on a version 2 journal (it does not guess), so if you
+  downgrade, start this release once first so it finishes any interrupted checkpoint. No
+  Qdrant data migration is needed: the collections and payloads are unchanged.
+- Search, context, chat and conflict-scan requests are limited to 600 per principal per minute
+  by default (`429` with `Retry-After`). Raise `HIVEMEM_SEARCH_RATE_LIMIT_PER_MINUTE`, or set
+  it to `0`, for a principal that legitimately needs more.
 
 ### Added
 
