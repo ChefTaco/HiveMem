@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { durableJson, removeDurableFile } from "./durable-file.js";
 import { createHash } from "node:crypto";
+import { readJsonBounded } from "@hivemagnus/hive-common/fetch";
 import { agentIdFromCollectionName as agentIdFromCollection, isMemoryCollectionName as isMemoryCollection, memoryCollectionName as memoryCollection } from "./collection-names.js";
 import type {
   AgentInfo,
@@ -65,6 +66,12 @@ interface QdrantPoint {
   vector: number[];
   payload: JsonObject;
 }
+
+/**
+ * Largest Qdrant answer read. A scroll page holds 256 points, each a 768-float vector plus its
+ * payload (bounded by the request body limit when it was written), so 256 MiB leaves room.
+ */
+const QDRANT_MAX_RESPONSE_BYTES = 256 * 1024 * 1024;
 
 const vectorDimensions = {
   memory: 768,
@@ -481,15 +488,16 @@ export class QdrantHiveMemPersistence implements HiveMemPersistence {
     const headers: Record<string, string> = { accept: "application/json" };
     if (this.apiKey) headers["api-key"] = this.apiKey;
     if (body !== undefined) headers["content-type"] = "application/json";
-    const init: RequestInit = { method, headers, signal: AbortSignal.timeout(10_000) };
+    const init: RequestInit = { method, headers, redirect: "error", signal: AbortSignal.timeout(10_000) };
     if (body !== undefined) init.body = JSON.stringify(body);
     const response = await this.fetchImpl(this.baseUrl + path, init);
     if (!okStatuses.includes(response.status)) {
-      const text = await response.text().catch(() => "");
-      throw new Error("Qdrant " + method + " " + path + " failed with " + response.status + (text ? ": " + text.slice(0, 200) : ""));
+      // The body stays out of the message: it can echo payload content, and messages reach logs.
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error("Qdrant " + method + " " + path + " failed with " + response.status);
     }
     if (response.status === 204) return undefined as T;
-    return (await response.json()) as T;
+    return (await readJsonBounded(response, QDRANT_MAX_RESPONSE_BYTES)) as T;
   }
 }
 

@@ -123,6 +123,10 @@ All REST API router paths below are mounted under `/v1`. Dashboard routes are mo
 | Health | `GET` | `/v1/health/live` | Dependency-free liveness |
 | Health | `GET` | `/v1/health/ready` | Store and queue-worker readiness; returns 503 when degraded |
 | Health | `GET` | `/v1/health/dependencies` | Dependency report for operator probes |
+
+The unauthenticated health routes share one readiness run: concurrent requests wait for the
+run in progress, and a finished run is reused for one second, so probing them hard does not
+multiply Qdrant probes and queue scans.
 | Metrics | `GET` | `/metrics` | Prometheus text metrics (admin JWT or metrics token) |
 | Stats | `GET` | `/v1/stats` | Collection point counts |
 | Auth | `POST` | `/v1/auth/login` | Validate an existing JWT and return principal metadata |
@@ -1318,15 +1322,28 @@ The former Python runtime had PAM login. The TypeScript core uses bounded HS256 
 
 ## Error Codes
 
-| Code | Meaning |
-| --- | --- |
-| `400` | Validation error (e.g., invalid embedding dimensions, empty content, future timestamps) |
-| `401` | Missing or invalid JWT |
-| `403` | Not authorized (e.g., updating another agent's memory) |
-| `404` | Memory not found or inaccessible |
-| `409` | Conflict (e.g., agent_id already registered) |
-| `429` | Rate limit exceeded (max writes per minute per agent) |
-| `503` | Embedding model not loaded or feature disabled |
+Error bodies keep the FastAPI-style `detail` string and also carry the suite error envelope,
+whose `code` is stable across releases and whose `requestId` matches the `x-request-id`
+response header:
+
+```json
+{"detail":"Not found","error":{"code":"not_found","message":"Not found","requestId":"<id>"}}
+```
+
+The maintenance answer (`503` while a managed upgrade runs) is still `{"error":"Hive is undergoing maintenance"}`.
+
+| Status | `error.code` | Meaning |
+| --- | --- | --- |
+| `400` | `bad_request` | Validation error (e.g., invalid embedding dimensions, empty content, future timestamps) |
+| `401` | `unauthorized` | Missing or invalid JWT |
+| `403` | `forbidden` | Not authorized (e.g., updating another agent's memory) |
+| `404` | `not_found` | Memory not found or inaccessible |
+| `409` | `conflict` | Conflict (e.g., agent_id already registered) |
+| `413` | `too_large` | Request body over `HIVEMEM_MAX_BODY_BYTES` |
+| `422` | `invalid_request` | An `Idempotency-Key` reused for a different request |
+| `429` | `rate_limited` | Search, context or chat budget spent (`HIVEMEM_SEARCH_RATE_LIMIT_PER_MINUTE` per principal, default 600); wait for `Retry-After` seconds |
+| `501` | `not_implemented` | Operation unsupported in this runtime (see `GET /v1/capabilities/operations`) |
+| `503` | `unavailable` | Persistence unavailable (write outcome indeterminate), or a feature disabled |
 
 ---
 

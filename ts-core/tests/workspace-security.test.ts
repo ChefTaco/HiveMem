@@ -337,7 +337,8 @@ test("malformed paths are client errors and a failed chat checkpoint still answe
     for (const path of ["/v1/memories/%E0%A4%A", "/v1/workspaces/%zz", "/v1/peers/%/conclusions"]) {
       const response = await fetch(origin + path, { headers });
       assert.equal(response.status, 400, path);
-      assert.deepEqual(await response.json(), { detail: "Malformed percent-encoding in request path" });
+      const body = await response.json() as { detail: string; error: { code: string; message: string } };
+      assert.deepEqual([body.detail, body.error.code, body.error.message], ["Malformed percent-encoding in request path", "bad_request", "Malformed percent-encoding in request path"]);
     }
     assert.equal(
       (await fetch(origin + "/dashboard/api/memory-options", { headers: { Cookie: "hivemem_dash=%E0%A4%A" } })).status,

@@ -4,6 +4,14 @@ import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import { InMemoryHiveMemStore, createHiveMemServer, signToken } from '../src/index.js';
 
+/** `detail` is unchanged for existing clients; the suite envelope rides alongside it. */
+function assertErrorBody(body: { detail?: unknown; error?: { code?: unknown; message?: unknown; requestId?: unknown } }, code: string, message: string): void {
+  assert.equal(body.detail, message);
+  assert.equal(body.error?.code, code);
+  assert.equal(body.error?.message, message);
+  assert.match(String(body.error?.requestId), /^[A-Za-z0-9._:-]{8,}$/);
+}
+
 const secret = 'b'.repeat(48);
 const limit = 4096;
 
@@ -43,7 +51,7 @@ test('a streamed body over the limit is answered with 413 and the same message',
     const chunks = Array.from({ length: 128 }, () => 'x'.repeat(64 * 1024));
     const response = await postChunked(port, token, ['{"content":"', ...chunks, '"}']);
     assert.equal(response.status, 413);
-    assert.deepEqual(JSON.parse(response.body), { detail: `Request body exceeds ${limit} bytes` });
+    assertErrorBody(JSON.parse(response.body), 'too_large', `Request body exceeds ${limit} bytes`);
   });
 });
 
@@ -52,7 +60,7 @@ test('a declared content-length over the limit is refused with 413 before readin
     const body = JSON.stringify({ content: 'x'.repeat(limit) });
     const response = await fetch(`http://127.0.0.1:${port}/v1/memories`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body });
     assert.equal(response.status, 413);
-    assert.deepEqual(await response.json(), { detail: `Request body exceeds ${limit} bytes` });
+    assertErrorBody(await response.json(), 'too_large', `Request body exceeds ${limit} bytes`);
   });
 });
 
@@ -60,7 +68,7 @@ test('request bodies keep their parsing rules: empty is {}, invalid JSON is a 40
   await withServer(async (port, token) => {
     const invalid = await postChunked(port, token, ['{"content":', ' nope}']);
     assert.equal(invalid.status, 400);
-    assert.deepEqual(JSON.parse(invalid.body), { detail: 'Invalid JSON request body' });
+    assertErrorBody(JSON.parse(invalid.body), 'bad_request', 'Invalid JSON request body');
     // An empty or whitespace-only body is read as {} (here refused by validation, not as JSON).
     for (const chunks of [[], ['  \n ']]) {
       const empty = await postChunked(port, token, chunks);
