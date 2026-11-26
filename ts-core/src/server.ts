@@ -14,7 +14,8 @@ import { TokenRevocationStore } from "./revocation-store.js";
 import { memoryOperations } from './operations.js';
 import { HIVEMEM_AUDIT_EXPORT_PATH, HIVEMEM_AUDIT_READ_PERMISSION, HIVEMEM_AUDIT_READ_SCOPE } from "./audit-export.js";
 import { createHealth } from "@hivemagnus/hive-common/health";
-import { createRequestContext, runWithRequestContext } from "@hivemagnus/hive-common/context";
+import { createRequestContext, readIdempotencyKey, runWithRequestContext } from "@hivemagnus/hive-common/context";
+import { IdempotencyCache, requestFingerprint, type IdempotencyOptions } from "./idempotency.js";
 import { readBody as readSharedBody } from "@hivemagnus/hive-common/node-http";
 import { timingSafeEqualString } from "@hivemagnus/hive-common/secrets";
 import { authorizeHiveAdminProvisioning, hiveAdminProvisioningConfig, HiveAdminProvisioningError, HIVE_ADMIN_PROVISIONING_MAX_BYTES, HIVE_ADMIN_PROVISIONING_PATH, isHiveAdminProvisioningOperationId, parseHiveAdminProvisioningRequest } from "./hive-admin-provisioning.js";
@@ -37,6 +38,8 @@ export interface HiveMemServerOptions {
   /** Dedicated installer credential. Disabled when HIVE_ADMIN_PROVISIONING_SECRET is absent. */
   adminProvisioningSecret?: string;
   adminProvisioningIssuer?: string;
+  /** Limits of the process-local `Idempotency-Key` replay cache. */
+  idempotency?: IdempotencyOptions;
 }
 
 /** Marks principals authenticated by an Oathweave service token. */
@@ -62,6 +65,29 @@ const resourcePrincipals = new WeakMap<IncomingMessage, AuthPrincipal>();
 
 const responseStores = new WeakMap<ServerResponse, InMemoryHiveMemStore>();
 const responseAudits = new WeakMap<ServerResponse, { principal: AuthPrincipal; path: string; method: string; requestId: string }>();
+/** The `Idempotency-Key` a response answers, claimed in the cache until the request settles. */
+const responseIdempotency = new WeakMap<ServerResponse, { cache: IdempotencyCache; principal: string; key: string }>();
+/** A body read early (to fingerprint an idempotent request) is handed to the route unchanged. */
+const parsedBodies = new WeakMap<IncomingMessage, unknown>();
+
+/** Record a 2xx answer for its Idempotency-Key before persistence is awaited. */
+function recordIdempotentResult(response: ServerResponse, status: number, payload: string): void {
+  const claim = responseIdempotency.get(response);
+  if (claim && status >= 200 && status < 300) claim.cache.complete(claim.principal, claim.key, response, status, payload);
+}
+
+/**
+ * Authenticated POSTs that change state and accept an Idempotency-Key. Searches, context, chat
+ * and embedding are reads; token and credential issuance answer secrets that must not be kept.
+ */
+function acceptsIdempotencyKey(pathname: string): boolean {
+  return pathname.startsWith("/v1/")
+    && pathname !== "/v1/memories/conflicts"
+    && !/search|context|chat|browse|embed/.test(pathname)
+    && !pathname.startsWith("/v1/auth/")
+    && !pathname.startsWith("/v1/actor-credentials/")
+    && pathname !== "/v1/agents/register";
+}
 
 async function sendNoContent(response: ServerResponse): Promise<void> {
   const audit = responseAudits.get(response);
@@ -71,12 +97,15 @@ async function sendNoContent(response: ServerResponse): Promise<void> {
 }
 
 async function sendJson(response: ServerResponse, status: number, body: unknown): Promise<void> {
+  const payload = JSON.stringify(body);
   if (status >= 200 && status < 300) {
     const audit = responseAudits.get(response);
     if (audit && !(body && typeof body === "object" && "dry_run" in body && body.dry_run === true)) responseStores.get(response)?.recordOperation("api.mutation", audit.principal, { path: audit.path, method: audit.method, request_id: audit.requestId, status });
+    // Before the flush: if it fails (503, outcome indeterminate) a retry with the same key replays
+    // this result once persistence recovers, instead of writing a second time.
+    recordIdempotentResult(response, status, payload);
     await responseStores.get(response)?.flushPersistence();
   }
-  const payload = JSON.stringify(body);
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "content-length": Buffer.byteLength(payload),
@@ -104,6 +133,7 @@ function sendText(response: ServerResponse, status: number, contentType: string,
 }
 
 async function readBody(request: IncomingMessage, maxBodyBytes = Number.parseInt(process.env.HIVEMEM_MAX_BODY_BYTES ?? "1048576", 10)): Promise<unknown> {
+  if (parsedBodies.has(request)) return parsedBodies.get(request);
   const configuredLimit = (request as IncomingMessage & { hiveMaxBodyBytes?: number }).hiveMaxBodyBytes ?? maxBodyBytes;
   // The shared reader enforces the limit while streaming and, past it, answers first and then
   // discards the rest of the upload for a bounded time. Parsing stays HiveMem's own: no
@@ -435,6 +465,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
   const maxBodyBytes = options.maxBodyBytes ?? Number.parseInt(process.env.HIVEMEM_MAX_BODY_BYTES ?? "1048576", 10);
   if (!Number.isInteger(maxBodyBytes) || maxBodyBytes < 1024) throw new Error("HIVEMEM_MAX_BODY_BYTES must be an integer of at least 1024");
   const store = options.store ?? new InMemoryHiveMemStore();
+  const idempotency = new IdempotencyCache(options.idempotency);
   const revocations = new TokenRevocationStore(options.revocationFilePath ?? process.env.HIVEMEM_REVOCATION_FILE);
   const isRevoked = (jti: string) => revocations.has(jti);
   const metricsToken = options.metricsToken ?? (process.env.HIVEMEM_METRICS_TOKEN || undefined);
@@ -834,6 +865,26 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       const neededScope = requiredScope(method, url.pathname);
       if (neededScope) requireScope(principal, neededScope);
       if (!["GET", "HEAD"].includes(method) && url.pathname !== "/v1/memories/conflicts" && !/search|context|chat|browse|embed/.test(url.pathname)) responseAudits.set(response, { principal, path: url.pathname, method, requestId });
+      if (method === "POST" && acceptsIdempotencyKey(url.pathname)) {
+        const idempotencyKey = readIdempotencyKey(request.headers);
+        if (idempotencyKey !== undefined) {
+          const body = await readBody(request);
+          parsedBodies.set(request, body);
+          const replay = idempotency.begin(principal.agentId, idempotencyKey, requestFingerprint(method, url.pathname, url.search, body), response);
+          if (replay) {
+            // The original write is in memory; answer only once it is durable.
+            await store.flushPersistence();
+            response.writeHead(replay.status, {
+              "content-type": "application/json; charset=utf-8",
+              "content-length": Buffer.byteLength(replay.payload),
+              "idempotent-replayed": "true",
+            });
+            response.end(replay.payload);
+            return;
+          }
+          responseIdempotency.set(response, { cache: idempotency, principal: principal.agentId, key: idempotencyKey });
+        }
+      }
 
       if (method === "GET" && url.pathname === HIVEMEM_AUDIT_EXPORT_PATH) {
         // Administrators, or an Oathweave service token holding hivemem:audit:read.
@@ -1430,7 +1481,15 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
   return (request, response) => {
     const context = createRequestContext(request.headers);
     response.setHeader("x-request-id", context.requestId);
-    return runWithRequestContext(context, () => handle(request, response, context.requestId));
+    return runWithRequestContext(context, async () => {
+      try {
+        await handle(request, response, context.requestId);
+      } finally {
+        // A claim that did not complete with a 2xx (an error, a 4xx, a streamed answer) frees its key.
+        const claim = responseIdempotency.get(response);
+        if (claim) claim.cache.release(claim.principal, claim.key, response);
+      }
+    });
   };
 }
 
