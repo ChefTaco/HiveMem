@@ -267,6 +267,8 @@ export interface WebhookEndpoint {
   has_secret: boolean;
   headers: Record<string, string>;
   metadata: Record<string, unknown>;
+  /** Also receives other members' writes in the workspace; absent from servers without workspace webhooks. */
+  all_members?: boolean;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;

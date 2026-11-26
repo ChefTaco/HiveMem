@@ -177,6 +177,7 @@ multiply Qdrant probes and queue scans.
 | Workspaces | `POST` | `/v1/workspaces/{workspace_id}/schedule-dream` | Queue workspace dream consolidation |
 | Admin | `GET` | `/v1/admin/audit` | Query append-only write audit log |
 | Audit | `GET` | `/v1/audit/export` | Suite audit export (HiveAuditRecord v1), keyset-paged; admin or service `hivemem:audit:read` |
+| Events | `GET` | `/v1/hive/events` | HiveEvent v1 feed for the suite inbox; admin |
 | Admin | `POST` | `/v1/backup` | Unavailable (501); use root host-bound backup |
 | Admin | `POST` | `/v1/restore` | Unavailable (501); use isolated root recovery |
 | Admin | `GET` | `/v1/admin/workspaces/{workspace_id}/export` | Export portable workspace bundle |
@@ -792,6 +793,29 @@ Workspace export returns `workspace_id`, readable current `memories`, accessible
 
 `GET /v1/admin/audit` requires admin authorization and reads persisted redacted operations, with pagination and supported workspace/action filters. It does not read the former Python JSONL audit log.
 
+### Suite Event Feed
+
+```http
+GET /v1/hive/events?after=<cursor>&limit=<n>
+```
+
+Returns a HiveEvent v1 page, `{"data":[HiveEvent...],"nextCursor":string|null}`, oldest first by
+`(occurredAt, id)`, for events from the last 14 days. Administrators only; a workspace-restricted
+administrator sees only its workspaces. `limit` is 1-200 (default 100); `after` is a previous
+page's `nextCursor`, which is `null` once the feed is caught up. Every event links to the HiveXUI
+memory screen (`/?page=memories`). Summaries never quote memory content, job errors or webhook
+URLs.
+
+| Type | Severity | From |
+| --- | --- | --- |
+| `memory.conflict.detected` | warning | A detected conflict between two memories |
+| `webhook.delivery.failed` | warning | A webhook delivery whose last attempt failed (its reason code and HTTP status) |
+| `queue.job.dead_letter` | critical | A queue job that stopped retrying |
+| `worker.stale` | critical | The managed queue worker has not reported for a minute (served while it stays stale) |
+
+The suite announces the feed through the Hive Registry capability
+`{"events.v1": {"path": "/v1/hive/events"}}`.
+
 ### Suite Audit Export
 
 ```http
@@ -969,12 +993,21 @@ Create/update fields:
 | `clear_secret` | bool | `false` | Update-only flag to remove the stored secret |
 | `headers` | object | `{}` | Extra outbound headers; `Authorization`, `Content-Length`, and `Host` are blocked |
 | `metadata` | object | `{}` | Caller-defined endpoint metadata |
+| `all_members` | bool | `false` | Also receive other members' writes in the workspace. Needs workspace owner or admin rights, checked again at delivery |
 
 Webhook destinations are hardened by default. New endpoint URLs must use HTTPS and must not target loopback, link-local, private, reserved, metadata-service, or otherwise non-public IP ranges unless the server is explicitly configured for a trusted internal deployment. Relevant settings are `HIVEMEM_WEBHOOK_ALLOW_HTTP`, `HIVEMEM_WEBHOOK_ALLOW_PRIVATE_IPS`, `HIVEMEM_WEBHOOK_ALLOWED_HOSTS`, and `HIVEMEM_WEBHOOK_VERIFY_TLS`.
 
 Supported event types: `memory.created`, `session.created`, `queue.empty`, `summary.updated`, `peer_card.updated`, `conflict.detected`, and `webhook.test`.
 
 Normal agent-owned events are delivered only to endpoints owned by the same authenticated principal. System events such as `queue.empty` can fan out to matching enabled workspace endpoints.
+
+An `all_members` endpoint also receives `memory.created` and `session.created` for other members'
+writes in its workspace, marked `member_event: true` with the writer in `actor_agent_id`. It
+receives only what its owner could read (shared memories, not another member's private memory or
+private session). For a memory whose `sensitivity` is `sensitive` or `restricted`, or whose
+`redaction_policy` is not `none`, `data.content` is `null` and `data.content_withheld` is `true`.
+If the owner loses workspace admin rights, queued member deliveries are skipped
+(`workspace_access_withdrawn`) and no new ones are queued.
 
 Delivery body envelope:
 

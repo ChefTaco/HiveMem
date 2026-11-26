@@ -3,6 +3,7 @@ import { z } from "zod";
 import { actorCredentialSchema } from "./actor-credentials.js";
 import { memoryBrowserSchemas } from "./browser-memory-contracts.js";
 import { HiveAuditPageSchema, HiveAuditRecordSchema } from "./audit-export.js";
+import { HiveEventPageSchema, HiveEventSchema } from "./hive-events.js";
 
 // Owned browser contracts. Native clients retain their existing compatibility APIs.
 const jsonObject = z.record(z.string(), z.unknown());
@@ -105,6 +106,7 @@ export const WebhookWriteSchema = z.object({
   headers: z.record(z.string(), z.string()),
   metadata: jsonObject,
   secret: z.string().optional(),
+  all_members: z.boolean().optional().describe("Also receive other members' writes in the workspace, without content for sensitive, restricted or redacted memories. Needs workspace owner or admin."),
 });
 export const WebhookSchema = WebhookWriteSchema.omit({ secret: true }).extend({
   id: z.string(),
@@ -221,6 +223,8 @@ const browserSchemas = {
   MemoryProfile: MemoryProfileSchema,
   HiveAuditRecord: HiveAuditRecordSchema,
   HiveAuditPage: HiveAuditPageSchema,
+  HiveEvent: HiveEventSchema,
+  HiveEventPage: HiveEventPageSchema,
 };
 function browserOperation(
   summary: string,
@@ -363,6 +367,24 @@ export function buildHiveMemOpenApiSpec(): Record<string, unknown> {
             "400": { description: "Malformed cursor or limit" },
             "401": { description: "Authentication required" },
             "403": { description: "Administrator or hivemem:audit:read service permission required" },
+          },
+        },
+      },
+      "/v1/hive/events": {
+        get: {
+          ...browserOperation(
+            "HiveEvent v1 feed for the suite inbox: memory conflicts, failed webhook deliveries, dead-lettered queue jobs and a stale worker, oldest first by (occurredAt, id), 14-day retention; administrators only",
+            "HiveEventPage",
+          ),
+          parameters: [
+            { name: "after", in: "query", required: false, schema: { type: "string", maxLength: 512 }, description: "Opaque cursor from a previous page's nextCursor" },
+            { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 200, default: 100 } },
+          ],
+          responses: {
+            "200": browserOperation("Event page", "HiveEventPage").responses["200"],
+            "400": { description: "Malformed cursor or limit" },
+            "401": { description: "Authentication required" },
+            "403": { description: "Administrator required" },
           },
         },
       },

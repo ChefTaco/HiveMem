@@ -4,6 +4,10 @@ All notable changes to `@hivemagnus/hivemem-sdk`.
 
 ## [Unreleased]
 
+### Added
+
+- `WebhookEndpoint.all_members`, the workspace-level webhook flag.
+
 ## [1.3.0] - 2026-11-26
 
 ### Upgrade notes
