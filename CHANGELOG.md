@@ -24,6 +24,7 @@
   session answer or not, as service tokens already were. Revocations outlive their token's
   expiry by 60 seconds so the clock tolerance cannot readmit a revoked token.
 - Both settings are listed by `hivemem-server env-schema`.
+- Dependabot now opens one grouped weekly pull request (group `hivemagnus`) for `@hivemagnus/*` package updates, so suite package bumps arrive together. Repository configuration only; nothing to do when upgrading.
 
 ## [1.11.0] - 2026-11-26
 
