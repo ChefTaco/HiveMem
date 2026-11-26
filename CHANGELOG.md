@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.12.0] - 2026-11-26
 
 ### Upgrade notes
 
@@ -10,8 +10,10 @@
 - `HIVEMEM_OATHWEAVE_SESSION_CACHE_MS` now defaults to `3000` (it was `0`), so a signed-out
   browser session can keep working for up to 3 seconds. Set it to `0` to check the session on
   every request again. Existing sign-ins, tokens and account links are unaffected.
-- Migrations: none. Revocation list entries are now kept 60 seconds past their token's expiry;
-  the file format is unchanged and older releases read it as before.
+- Migrations: none. The storage format is unchanged (`managed-format-1` is still the latest), so
+  a suite upgrade does not need `--allow-migrations` for HiveMem. Revocation list entries are now
+  kept 60 seconds past their token's expiry; the file format is unchanged, so a downgrade to
+  1.11.0 reads it as before.
 
 ### Changed
 
