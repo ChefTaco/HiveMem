@@ -6,6 +6,7 @@ import { isUsableSigningSecret } from "./auth.js";
 import { ADMIN_SCOPE, ISSUE_TOKEN_DEFAULT_TTL_SECONDS, ISSUE_TOKEN_MAX_TTL_SECONDS, ISSUE_TOKEN_MIN_TTL_SECONDS, TOKEN_ROLES } from "./issue-token.js";
 import { qdrantUrlFromEnv } from "./persistence.js";
 import { semanticConfig } from "./semantic-index.js";
+import { readJsonBounded } from "@hivemagnus/hive-common/fetch";
 
 export const PACKAGE_NAME = "@hivemagnus/hivemem-server";
 export const DEFAULT_HOST = "127.0.0.1";
@@ -169,7 +170,7 @@ export async function probeQdrant(url: string, apiKey: string | undefined, timeo
       await response.body?.cancel();
       return { ok: false, detail: `Qdrant at ${target} answered HTTP ${response.status}; check HIVEMEM_QDRANT_URL.` };
     }
-    const body = (await response.json().catch(() => null)) as { result?: { collections?: unknown[] } } | null;
+    const body = (await readJsonBounded(response, 16 * 1024 * 1024).catch(() => null)) as { result?: { collections?: unknown[] } } | null;
     const count = Array.isArray(body?.result?.collections) ? body.result.collections.length : null;
     return { ok: true, detail: `Qdrant reachable at ${target}${count === null ? "" : ` (${count} collection${count === 1 ? "" : "s"})`}` };
   } catch (error) {
@@ -283,6 +284,7 @@ export function envSchema(): EnvSchema {
       { name: "HIVEMEM_EMBEDDING_MODEL", required: false, secret: false, description: "Embedding model name sent to HIVEMEM_EMBEDDING_ENDPOINT." },
       { name: "HIVEMEM_EMBEDDING_REVISION", required: false, secret: false, description: "Model revision label; changing it isolates vectors from a different model build." },
       { name: "HIVEMEM_EMBEDDING_DIMENSIONS", required: false, secret: false, description: "Embedding vector size returned by the model (1-8192)." },
+      { name: "HIVEMEM_SEARCH_RATE_LIMIT_PER_MINUTE", required: false, secret: false, default: "600", description: "Search, context, chat and conflict-scan requests per principal per minute (token bucket). 0 turns the limit off." },
       { name: "HIVEMEM_SEMANTIC_COLLECTION", required: false, secret: false, description: "Qdrant collection for the semantic shadow index; must start with hivemem_shadow_." },
     ],
   };

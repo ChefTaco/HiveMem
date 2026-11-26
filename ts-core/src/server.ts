@@ -18,6 +18,8 @@ import { createRequestContext, readIdempotencyKey, runWithRequestContext } from 
 import { IdempotencyCache, requestFingerprint, type IdempotencyOptions } from "./idempotency.js";
 import { readBody as readSharedBody } from "@hivemagnus/hive-common/node-http";
 import { timingSafeEqualString } from "@hivemagnus/hive-common/secrets";
+import { defaultCodeForStatus, defaultMessageForStatus } from "@hivemagnus/hive-common/errors";
+import { PrincipalRateLimiter, RateLimitError, rateLimitedPath, searchRateLimitFromEnv } from "./rate-limit.js";
 import { authorizeHiveAdminProvisioning, hiveAdminProvisioningConfig, HiveAdminProvisioningError, HIVE_ADMIN_PROVISIONING_MAX_BYTES, HIVE_ADMIN_PROVISIONING_PATH, isHiveAdminProvisioningOperationId, parseHiveAdminProvisioningRequest } from "./hive-admin-provisioning.js";
 
 export interface HiveMemServerOptions {
@@ -40,6 +42,10 @@ export interface HiveMemServerOptions {
   adminProvisioningIssuer?: string;
   /** Limits of the process-local `Idempotency-Key` replay cache. */
   idempotency?: IdempotencyOptions;
+  /** Search, context and chat requests per principal per minute; 0 turns the limit off. */
+  searchRateLimitPerMinute?: number;
+  /** How long a finished readiness run is reused, in milliseconds. Defaults to 1000. */
+  readyCacheMs?: number;
 }
 
 /** Marks principals authenticated by an Oathweave service token. */
@@ -96,8 +102,26 @@ async function sendNoContent(response: ServerResponse): Promise<void> {
   response.writeHead(204); response.end();
 }
 
+/**
+ * Every `{ detail }` error body also carries the suite envelope, `error: { code, message,
+ * requestId }`, so suite clients get a stable code. `detail` stays for existing clients.
+ */
+function withErrorEnvelope(response: ServerResponse, status: number, body: unknown): unknown {
+  if (status < 400 || !body || typeof body !== "object" || Array.isArray(body) || !("detail" in body) || "error" in body) return body;
+  const detail = (body as { detail: unknown }).detail;
+  const requestId = response.getHeader("x-request-id");
+  return {
+    ...body,
+    error: {
+      code: defaultCodeForStatus(status),
+      message: typeof detail === "string" && detail ? detail : defaultMessageForStatus(status),
+      ...(typeof requestId === "string" ? { requestId } : {}),
+    },
+  };
+}
+
 async function sendJson(response: ServerResponse, status: number, body: unknown): Promise<void> {
-  const payload = JSON.stringify(body);
+  const payload = JSON.stringify(withErrorEnvelope(response, status, body));
   if (status >= 200 && status < 300) {
     const audit = responseAudits.get(response);
     if (audit && !(body && typeof body === "object" && "dry_run" in body && body.dry_run === true)) responseStores.get(response)?.recordOperation("api.mutation", audit.principal, { path: audit.path, method: audit.method, request_id: audit.requestId, status });
@@ -304,6 +328,8 @@ function paged<T>(items: readonly T[], offset: number, limit: number): { results
   return { results: items.slice(offset, offset + limit), total: items.length, offset, limit };
 }
 
+type HealthPayload = Awaited<ReturnType<typeof healthPayload>>;
+
 async function healthPayload(store: InMemoryHiveMemStore) {
   const persistence = await store.persistenceHealth();
   const worker = store.workerHealth();
@@ -478,6 +504,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
   if (!Number.isInteger(maxBodyBytes) || maxBodyBytes < 1024) throw new Error("HIVEMEM_MAX_BODY_BYTES must be an integer of at least 1024");
   const store = options.store ?? new InMemoryHiveMemStore();
   const idempotency = new IdempotencyCache(options.idempotency);
+  const searchLimiter = new PrincipalRateLimiter(options.searchRateLimitPerMinute ?? searchRateLimitFromEnv(process.env.HIVEMEM_SEARCH_RATE_LIMIT_PER_MINUTE));
   const revocations = new TokenRevocationStore(options.revocationFilePath ?? process.env.HIVEMEM_REVOCATION_FILE);
   const isRevoked = (jti: string) => revocations.has(jti);
   const metricsToken = options.metricsToken ?? (process.env.HIVEMEM_METRICS_TOKEN || undefined);
@@ -489,12 +516,24 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
   }
   if (metricsToken !== undefined && metricsToken.length < 32) throw new Error("HIVEMEM_METRICS_TOKEN must be at least 32 characters");
 
+  // Health is unauthenticated and each run probes Qdrant and scans the queue, so every health
+  // route shares one run: the one in progress, or a finished one for readyCacheMs.
+  const readyCacheMs = options.readyCacheMs ?? 1000;
+  if (!Number.isInteger(readyCacheMs) || readyCacheMs < 0) throw new Error("readyCacheMs must be a non-negative integer");
+  let healthRun: { result: Promise<HealthPayload>; finishedAt?: number } | undefined;
+  const sharedHealth = (): Promise<HealthPayload> => {
+    if (healthRun && (healthRun.finishedAt === undefined || Date.now() - healthRun.finishedAt < readyCacheMs)) return healthRun.result;
+    const run: { result: Promise<HealthPayload>; finishedAt?: number } = { result: healthPayload(store) };
+    run.result.then(() => { run.finishedAt = Date.now(); }, () => { if (healthRun === run) healthRun = undefined; });
+    healthRun = run;
+    return run.result;
+  };
   const health = createHealth({
     service: "hivemem",
     version: releaseMetadata().version,
     checks: [
-      { name: "store", check: async () => (await store.persistenceHealth()).ready },
-      { name: "worker", check: () => store.workerHealth().ready },
+      { name: "store", check: async () => (await sharedHealth()).persistence.ready },
+      { name: "worker", check: async () => (await sharedHealth()).worker.ready },
     ],
   });
 
@@ -607,7 +646,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       }
 
       if (method === "GET" && url.pathname === "/v1/health") {
-        const health = await healthPayload(store);
+        const health = await sharedHealth();
         await sendJson(response, health.status === "ok" ? 200 : 503, health);
         return;
       }
@@ -616,7 +655,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
         return;
       }
       if (method === "GET" && (url.pathname === "/v1/health/ready" || url.pathname === "/v1/health/dependencies")) {
-        const health = await healthPayload(store);
+        const health = await sharedHealth();
         await sendJson(response, health.status === "ok" ? 200 : 503, health);
         return;
       }
@@ -766,6 +805,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       }
       if (method === "POST" && url.pathname === "/dashboard/api/archive/search") {
         const principal = dashboardCookieAuth(request, jwtSecret, isRevoked, store);
+        searchLimiter.take(principal.agentId);
         await sendJson(response, 200, store.searchArchive(principal, await readBody(request)));
         return;
       }
@@ -814,12 +854,14 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
 
       if (method === "POST" && url.pathname === "/dashboard/api/context/preview") {
         const principal = dashboardCookieAuth(request, jwtSecret, isRevoked, store);
+        searchLimiter.take(principal.agentId);
         await sendJson(response, 200, store.context(principal, await readBody(request)));
         return;
       }
 
       if (method === "POST" && url.pathname === "/dashboard/api/search/explain") {
         const principal = dashboardCookieAuth(request, jwtSecret, isRevoked, store);
+        searchLimiter.take(principal.agentId);
         await sendJson(response, 200, store.search(principal, await readBody(request), true));
         return;
       }
@@ -877,6 +919,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       await store.flushPersistence();
       const neededScope = requiredScope(method, url.pathname);
       if (neededScope) requireScope(principal, neededScope);
+      if (rateLimitedPath(method, url.pathname)) searchLimiter.take(principal.agentId);
       if (!["GET", "HEAD"].includes(method) && url.pathname !== "/v1/memories/conflicts" && !/search|context|chat|browse|embed/.test(url.pathname)) responseAudits.set(response, { principal, path: url.pathname, method, requestId });
       if (method === "POST" && acceptsIdempotencyKey(url.pathname)) {
         const idempotencyKey = readIdempotencyKey(request.headers);
@@ -1487,6 +1530,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       const status = errorStatus(error);
       const detail = status >= 500 && !(error instanceof Error && error.name === "UnsupportedOperationError") ? "Internal server error" : errorMessage(error);
       if (status >= 500) console.error(`request ${requestId} failed:`, error);
+      if (error instanceof RateLimitError && !response.headersSent) response.setHeader("retry-after", String(error.retryAfterSeconds));
       await sendJson(response, status, { detail });
     }
   };

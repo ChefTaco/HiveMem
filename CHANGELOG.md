@@ -2,8 +2,19 @@
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- Search, context, chat and conflict-scan requests are limited to 600 per principal per minute
+  by default (`429` with `Retry-After`). Raise `HIVEMEM_SEARCH_RATE_LIMIT_PER_MINUTE`, or set
+  it to `0`, for a principal that legitimately needs more.
+
 ### Added
 
+- Error bodies carry the suite envelope `error: { code, message, requestId }` next to the
+  unchanged `detail`, so HiveXUI and Cindertrace get stable codes and a request ID.
+- A per-principal token bucket on the routes that scan memory in process: memory search
+  (text, hybrid, archive), context, chat (including session chat and context), conflict
+  detection and their compatibility dashboard routes.
 - Oathweave account links (`HIVEMEM_OATHWEAVE_IDENTITIES_JSON`) accept an optional `scopes`
   ceiling. Oathweave permissions outside it are dropped, so a role that gains
   `hivemem:admin:all` no longer makes a capped user an administrator. Links without `scopes`
@@ -13,6 +24,10 @@
 
 ### Changed
 
+- The health routes share one readiness run (in progress, or finished within the last second)
+  instead of probing Qdrant and scanning the queue on every request.
+- Qdrant answers are read with a 256 MiB bound, redirects are refused, and a Qdrant error
+  message no longer quotes Qdrant's response body, which can echo payload content into logs.
 - HiveMem no longer builds its own JWKS resolver: the shared Oathweave verifier fetches
   `OATHWEAVE_JWKS_URL` with its cache-age, key-rotation cooldown, no-redirect and timeout
   rules. User and service verifiers each keep their own cache of that one endpoint.

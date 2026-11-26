@@ -180,6 +180,7 @@ also reads these:
 | `HIVEMEM_REVOCATION_FILE` | `<HIVEMEM_STORAGE_PATH>/revoked-tokens.json` | Persistent `jti` revocation list. |
 | `HIVEMEM_METRICS_ALLOW_LOOPBACK` | `false` | `true` serves `/metrics` to loopback clients without credentials. |
 | `HIVEMEM_MAX_BODY_BYTES` | `1048576` | Request body limit (at least 1024). |
+| `HIVEMEM_SEARCH_RATE_LIMIT_PER_MINUTE` | `600` | Search, context, chat and conflict-scan requests each principal may make per minute (a token bucket, so up to that many in a burst). `0` turns the limit off. |
 | `HIVEMEM_WORKER_ENABLED` | `true` | `false` stops the background queue worker. `HIVE_REHEARSAL=true` stops it too. |
 | `HIVEMEM_CONSOLIDATION_INTERVAL_SECONDS` | `300` | How often the worker schedules consolidation; `0` turns scheduling off. |
 | `HIVEMEM_WEBHOOK_ALLOWED_PRIVATE_HOSTS` | empty | Comma-separated host names webhooks may reach on a private network. |

@@ -60,7 +60,8 @@ test('persistence failure fails writes and readiness while liveness survives; re
   store.configureWorker(true);
   const secret = randomBytes(32).toString('hex');
   const token = signToken(secret, { sub: 'fixture', scope: '*', exp: Math.floor(Date.now() / 1000) + 300 });
-  const server = createHiveMemServer({ store, jwtSecret: secret });
+  // readyCacheMs 0: readiness must reflect the recovery at once here, not a second later.
+  const server = createHiveMemServer({ store, jwtSecret: secret, readyCacheMs: 0 });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const base = `http://127.0.0.1:${address.port}`;
