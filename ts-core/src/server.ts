@@ -19,8 +19,8 @@ import { createRequestContext, readIdempotencyKey, runWithRequestContext } from 
 import { IdempotencyCache, requestFingerprint, type IdempotencyOptions } from "./idempotency.js";
 import { readBody as readSharedBody } from "@hivemagnus/hive-common/node-http";
 import { timingSafeEqualString } from "@hivemagnus/hive-common/secrets";
-import { defaultCodeForStatus, defaultMessageForStatus } from "@hivemagnus/hive-common/errors";
-import { PrincipalRateLimiter, RateLimitError, rateLimitedPath, searchRateLimitFromEnv } from "./rate-limit.js";
+import { defaultCodeForStatus, defaultMessageForStatus, isHiveError } from "@hivemagnus/hive-common/errors";
+import { PrincipalRateLimiter, rateLimitedPath, searchRateLimitFromEnv } from "./rate-limit.js";
 import { authorizeHiveAdminProvisioning, hiveAdminProvisioningConfig, HiveAdminProvisioningError, HIVE_ADMIN_PROVISIONING_MAX_BYTES, HIVE_ADMIN_PROVISIONING_PATH, isHiveAdminProvisioningOperationId, parseHiveAdminProvisioningRequest } from "./hive-admin-provisioning.js";
 
 export interface HiveMemServerOptions {
@@ -1554,7 +1554,8 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       const status = errorStatus(error);
       const detail = status >= 500 && !(error instanceof Error && error.name === "UnsupportedOperationError") ? "Internal server error" : errorMessage(error);
       if (status >= 500) console.error(`request ${requestId} failed:`, error);
-      if (error instanceof RateLimitError && !response.headersSent) response.setHeader("retry-after", String(error.retryAfterSeconds));
+      // A suite error may carry response headers, such as the rate limit's Retry-After.
+      if (isHiveError(error) && error.headers && !response.headersSent) for (const [name, value] of Object.entries(error.headers)) response.setHeader(name, value);
       await sendJson(response, status, { detail });
     }
   };

@@ -7,7 +7,8 @@ import { createHiveMemServer, type HiveMemServerOptions } from "../src/server.js
 import { InMemoryHiveMemStore } from "../src/store.js";
 import { signToken } from "../src/auth.js";
 import { QdrantHiveMemPersistence } from "../src/persistence.js";
-import { PrincipalRateLimiter, RateLimitError, rateLimitedPath, searchRateLimitFromEnv } from "../src/rate-limit.js";
+import { isHiveError } from "@hivemagnus/hive-common/errors";
+import { PrincipalRateLimiter, rateLimitedPath, searchRateLimitFromEnv } from "../src/rate-limit.js";
 
 const secret = randomBytes(32).toString("hex");
 const token = (sub: string, scope = "memories:read memories:write context:read sessions:read sessions:write") =>
@@ -73,10 +74,11 @@ test("the limiter refills evenly and its settings are validated", () => {
   let now = 0;
   const limiter = new PrincipalRateLimiter(60, () => now);
   for (let index = 0; index < 60; index++) limiter.take("agent");
-  assert.throws(() => limiter.take("agent"), (error: unknown) => error instanceof RateLimitError && error.retryAfterSeconds === 1);
+  assert.throws(() => limiter.take("agent"), (error: unknown) => isHiveError(error) && error.status === 429 && error.code === "rate_limited" && error.headers?.["retry-after"] === "1");
   now += 1000;
   limiter.take("agent");
-  assert.throws(() => limiter.take("agent"), RateLimitError);
+  assert.throws(() => limiter.take("agent"), (error: unknown) => isHiveError(error) && error.code === "rate_limited");
+  assert.equal(new PrincipalRateLimiter(0).enabled, false);
   assert.equal(searchRateLimitFromEnv(undefined), 600);
   assert.equal(searchRateLimitFromEnv("0"), 0);
   assert.equal(searchRateLimitFromEnv("120"), 120);
