@@ -1,14 +1,12 @@
 // Oathweave identities for HiveMem, built on the shared @hivemagnus/hive-common verifier.
 import {
   OATHWEAVE_NATIVE_ISSUER_PATTERN,
-  OATHWEAVE_REQUEST_TIMEOUT_MS,
   OathweaveError,
-  assertOathweaveEndpoint,
   createOathweaveVerifier as createSharedVerifier,
   type OathweaveServicePrincipal,
   type OathweaveUserPrincipal,
 } from "@hivemagnus/hive-common/oathweave";
-import { createRemoteJWKSet, customFetch, type JWTVerifyGetKey } from "jose";
+import type { JWTVerifyGetKey } from "jose";
 
 /** HiveMem's resource audience. */
 export const HIVEMEM_OATHWEAVE_AUDIENCE = "hivemem";
@@ -35,12 +33,29 @@ interface Overrides {
   fetch?: typeof fetch;
   /** Clock in epoch milliseconds. */
   now?: () => number;
+  /** Userinfo reuse window in milliseconds; 0 (the default) checks the session on every call. */
+  sessionCacheMs?: number;
+}
+
+/** Longest userinfo reuse window an operator may opt into, so sign-out still takes effect within seconds. */
+export const HIVEMEM_OATHWEAVE_SESSION_CACHE_MAX_MS = 5000;
+
+/**
+ * `HIVEMEM_OATHWEAVE_SESSION_CACHE_MS`: an opt-in userinfo reuse window, 0 to 5000 ms. Unset or 0
+ * keeps the online session check on every request.
+ */
+export function oathweaveSessionCacheMs(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") return 0;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0 || value > HIVEMEM_OATHWEAVE_SESSION_CACHE_MAX_MS)
+    throw new Error(`HIVEMEM_OATHWEAVE_SESSION_CACHE_MS must be an integer from 0 to ${HIVEMEM_OATHWEAVE_SESSION_CACHE_MAX_MS}`);
+  return value;
 }
 
 /**
  * Browser (user) tokens through the shared verifier, with HiveMem's established rules: no clock
- * tolerance, an online session check on every call (no cache window), a required `roles` array
- * and the `clientId` claim. Failure is closed.
+ * tolerance, an online session check on every call (unless the operator opts into a reuse window
+ * of at most five seconds), a required `roles` array and the `clientId` claim. Failure is closed.
  */
 export function createOathweaveVerifier(options: OathweaveOptions, overrides: Overrides = {}) {
   const verifier = createSharedVerifier({
@@ -50,7 +65,7 @@ export function createOathweaveVerifier(options: OathweaveOptions, overrides: Ov
     userinfoUrl: options.userinfoUrl,
     accept: "user",
     clockToleranceSec: 0,
-    sessionCacheTtlMs: 0,
+    sessionCacheTtlMs: Math.min(Math.max(0, overrides.sessionCacheMs ?? 0), HIVEMEM_OATHWEAVE_SESSION_CACHE_MAX_MS),
     ...(overrides.keys ? { keys: overrides.keys } : {}),
     ...(overrides.fetch ? { fetch: overrides.fetch } : {}),
     ...(overrides.now ? { now: overrides.now } : {}),
@@ -70,6 +85,8 @@ export interface OathweaveServiceOptions {
    */
   issuers: readonly string[];
   audience: string;
+  /** The issuer's JWKS endpoint, used when no key resolver is passed. */
+  jwksUrl?: string;
 }
 
 /** Fills the shared verifier's required https issuer when every link names a native issuer. */
@@ -98,21 +115,23 @@ function serviceIssuers(issuers: readonly string[]) {
  */
 export function createOathweaveServiceVerifier(
   options: OathweaveServiceOptions,
-  keys: JWTVerifyGetKey,
-  overrides: Pick<Overrides, "now"> = {},
+  keys?: JWTVerifyGetKey,
+  overrides: Pick<Overrides, "now" | "fetch"> = {},
 ) {
   if (!options.issuers.length) throw new Error("At least one service issuer is required");
+  if (!keys && !options.jwksUrl) throw new Error("OATHWEAVE_JWKS_URL is required for Oathweave tokens");
   const { https, native } = serviceIssuers(options.issuers);
   const linked = new Set<string>([...https, ...native]);
   const verifier = createSharedVerifier({
     issuer: https.length ? https : NO_HTTPS_SERVICE_ISSUER,
     nativeIssuers: native,
     audience: options.audience,
-    keys,
+    ...(keys ? { keys } : { jwksUrl: options.jwksUrl as string }),
     accept: "service",
     clientIdClaim: "clientId",
     clockToleranceSec: 0,
     ...(overrides.now ? { now: overrides.now } : {}),
+    ...(overrides.fetch ? { fetch: overrides.fetch } : {}),
   });
   return async (token: string): Promise<OathweaveServicePrincipal> => {
     const principal = await verifier.verifyService(token);
@@ -122,23 +141,13 @@ export function createOathweaveServiceVerifier(
   };
 }
 
-function remoteKeys(jwksUrl: string): JWTVerifyGetKey {
-  assertOathweaveEndpoint(jwksUrl, "jwksUrl");
-  return createRemoteJWKSet(new URL(jwksUrl), {
-    [customFetch]: (target, init) =>
-      fetch(target, { ...init, redirect: "error", signal: AbortSignal.timeout(OATHWEAVE_REQUEST_TIMEOUT_MS) }),
-  });
-}
-
 let verifier: ReturnType<typeof createOathweaveVerifier> | undefined;
 let serviceVerifier: ReturnType<typeof createOathweaveServiceVerifier> | undefined;
-let sharedKeys: JWTVerifyGetKey | undefined;
-/** One JWKS cache for user and service tokens. */
-function configuredKeys(): JWTVerifyGetKey {
-  if (!process.env.OATHWEAVE_JWKS_URL) throw new Error("OATHWEAVE_JWKS_URL is required for Oathweave tokens");
-  sharedKeys ??= remoteKeys(process.env.OATHWEAVE_JWKS_URL);
-  return sharedKeys;
-}
+/**
+ * The shared verifier fetches and caches `OATHWEAVE_JWKS_URL` itself (bounded cache age, a
+ * cooldown on unknown key IDs, no redirects, request timeouts). User and service tokens are
+ * checked against that one endpoint.
+ */
 export function configuredOathweaveVerifier() {
   if (!process.env.OATHWEAVE_ISSUER && !process.env.OATHWEAVE_JWKS_URL && !process.env.OATHWEAVE_USERINFO_URL)
     return undefined;
@@ -152,7 +161,7 @@ export function configuredOathweaveVerifier() {
         userinfoUrl: process.env.OATHWEAVE_USERINFO_URL,
         audience: HIVEMEM_OATHWEAVE_AUDIENCE,
       },
-      { keys: configuredKeys() },
+      { sessionCacheMs: oathweaveSessionCacheMs(process.env.HIVEMEM_OATHWEAVE_SESSION_CACHE_MS) },
     );
   }
   return verifier;
@@ -160,9 +169,9 @@ export function configuredOathweaveVerifier() {
 /** Service tokens are accepted only for issuers named in an explicit link. */
 export function configuredOathweaveServiceVerifier(issuers: readonly string[]) {
   if (!issuers.length) return undefined;
+  if (!process.env.OATHWEAVE_JWKS_URL) throw new Error("OATHWEAVE_JWKS_URL is required for Oathweave tokens");
   serviceVerifier ??= createOathweaveServiceVerifier(
-    { issuers, audience: HIVEMEM_OATHWEAVE_AUDIENCE },
-    configuredKeys(),
+    { issuers, audience: HIVEMEM_OATHWEAVE_AUDIENCE, jwksUrl: process.env.OATHWEAVE_JWKS_URL },
   );
   return serviceVerifier;
 }

@@ -4,7 +4,8 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { createHiveMemHandler } from "../src/server.js";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
-import { createOathweaveVerifier } from "../src/identity.js";
+import { createOathweaveServiceVerifier, createOathweaveVerifier, oathweaveSessionCacheMs } from "../src/identity.js";
+import { parseAccountLinks } from "../src/account-links.js";
 import { InMemoryHiveMemStore } from "../src/store.js";
 import { signToken } from "../src/auth.js";
 import type { AuthPrincipal } from "../src/types.js";
@@ -156,4 +157,101 @@ test('browser links require an existing active account and the reviewed credenti
     server.closeAllConnections();
     await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
   }
+});
+
+test("an account link's scopes cap what Oathweave grants, including admin", async () => {
+  const store = new InMemoryHiveMemStore();
+  store.registerAgent(operator, { agent_id: "capped-agent", display_name: "Synthetic capped agent" }, "obviously-fake-native-token");
+  const issuer = "https://identity.example.com";
+  let permissions = ["hivemem:admin:all", "hivemem:memories:read", "hivemem:memories:write"];
+  const links: Array<{ issuer: string; subject: string; localId: string; scopes?: string[] }> = [{ issuer, subject: "fake-user", localId: "capped-agent", scopes: ["memories:read"] }];
+  const handler = createHiveMemHandler({
+    store, jwtSecret: "f".repeat(64), oathweaveAccountLinks: links,
+    verifyOathweave: async () => ({ subject: "fake-user", issuer, sessionId: "fake-session", roles: ["SUPER_ADMIN"], permissions, displayName: "Synthetic person" }),
+  });
+  const server = createServer(handler).listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const origin = `http://127.0.0.1:${address.port}`;
+  const headers = { Authorization: `Bearer ${Buffer.from(JSON.stringify({ alg: "RS256" })).toString("base64url")}.obviously-fake-fixture.signature`, "Content-Type": "application/json" };
+  const me = async () => (await (await fetch(origin + "/v1/auth/me", { headers })).json()) as { scopes: string[] };
+  try {
+    assert.deepEqual((await me()).scopes, ["memories:read"]);
+    assert.equal((await fetch(origin + "/v1/admin/audit", { headers })).status, 403, "a granted admin:all outside the ceiling is dropped");
+    assert.equal((await fetch(origin + "/v1/memories", { method: "POST", headers, body: JSON.stringify({ content: "capped write", type: "semantic", scope: "private" }) })).status, 403);
+    assert.equal((await fetch(origin + "/v1/memories/browse", { headers })).status, 200);
+    // A ceiling never widens: a wildcard ceiling keeps only what Oathweave grants.
+    links[0]!.scopes = ["memories:*"];
+    permissions = ["hivemem:memories:read"];
+    assert.deepEqual((await me()).scopes, ["memories:read"]);
+    // A granted wildcard is narrowed to the ceiling.
+    links[0]!.scopes = ["memories:read", "sessions:read"];
+    permissions = ["hivemem:*"];
+    assert.deepEqual((await me()).scopes.sort(), ["memories:read", "sessions:read"]);
+    // No ceiling keeps today's behaviour: every hivemem: permission applies.
+    delete links[0]!.scopes;
+    permissions = ["hivemem:admin:all"];
+    assert.equal((await fetch(origin + "/v1/admin/audit", { headers })).status, 200);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test("account links accept only well-formed scope ceilings", () => {
+  const base = { issuer: "https://identity.example.com", subject: "fake-user", localId: "capped-agent" };
+  assert.deepEqual(parseAccountLinks(JSON.stringify([{ ...base, scopes: ["memories:read", "memories:*"] }]))[0]!.scopes, ["memories:read", "memories:*"]);
+  assert.equal(parseAccountLinks(JSON.stringify([base]))[0]!.scopes, undefined);
+  for (const scopes of [[], ["Memories:Read"], ["memories read"], "memories:read"]) assert.throws(() => parseAccountLinks(JSON.stringify([{ ...base, scopes }])));
+});
+
+test("the userinfo reuse window is opt-in and capped at five seconds", async () => {
+  assert.equal(oathweaveSessionCacheMs(undefined), 0);
+  assert.equal(oathweaveSessionCacheMs(""), 0);
+  assert.equal(oathweaveSessionCacheMs("2000"), 2000);
+  for (const raw of ["-1", "5001", "1.5", "abc", "60000"]) assert.throws(() => oathweaveSessionCacheMs(raw), /HIVEMEM_OATHWEAVE_SESSION_CACHE_MS/);
+
+  const keys = await generateKeyPair("RS256");
+  const config = { issuer: "https://identity.example.com", jwksUrl: "https://identity.example.com/jwks", userinfoUrl: "https://identity.example.com/userinfo", audience: "hivemem" };
+  let clock = Date.now();
+  const token = await new SignJWT({ actorType: "USER", sessionId: "fake-session", clientId: "hivexui-hivemem", roles: [], permissions: ["hivemem:memories:read"] })
+    .setProtectedHeader({ alg: "RS256", kid: "test" }).setSubject("fake-user").setIssuer(config.issuer).setAudience("hivemem")
+    .setJti("fake-jti").setIssuedAt(Math.floor(clock / 1000)).setExpirationTime(Math.floor(clock / 1000) + 300).sign(keys.privateKey);
+  const local = createLocalJWKSet({ keys: [{ ...(await exportJWK(keys.publicKey)), kid: "test" }] });
+  for (const [sessionCacheMs, expected] of [[undefined, 3], [0, 3], [3000, 1]] as const) {
+    let calls = 0;
+    const verify = createOathweaveVerifier(config, { keys: local, now: () => clock, ...(sessionCacheMs === undefined ? {} : { sessionCacheMs }), fetch: async () => { calls++; return Response.json({ sub: "fake-user" }); } });
+    for (let index = 0; index < 3; index++) await verify(token);
+    assert.equal(calls, expected, `session cache ${String(sessionCacheMs)}`);
+  }
+  // Past the window the session is checked again, so a sign-out still lands within seconds.
+  let calls = 0;
+  let online = true;
+  const verify = createOathweaveVerifier(config, { keys: local, now: () => clock, sessionCacheMs: 3000, fetch: async () => { calls++; return online ? Response.json({ sub: "fake-user" }) : new Response("", { status: 401 }); } });
+  await verify(token);
+  online = false;
+  clock += 3500;
+  await assert.rejects(verify(token));
+  assert.equal(calls, 2);
+});
+
+test("service tokens are checked against the configured JWKS endpoint by the shared verifier", async () => {
+  const keys = await generateKeyPair("RS256");
+  const jwk = { ...(await exportJWK(keys.publicKey)), kid: "service-key", alg: "RS256", use: "sig" };
+  const requested: string[] = [];
+  const verify = createOathweaveServiceVerifier(
+    { issuers: ["hive-iam"], audience: "hivemem", jwksUrl: "https://identity.example.com/jwks" },
+    undefined,
+    { fetch: async (input) => { requested.push(String(input instanceof Request ? input.url : input)); return Response.json({ keys: [jwk] }); } },
+  );
+  const now = Math.floor(Date.now() / 1000);
+  const token = await new SignJWT({ actorType: "SERVICE_ACCOUNT", clientId: "example-service", clientName: "example-service", token_type: "access", roles: [], permissions: ["hivemem:memories:read"] })
+    .setProtectedHeader({ alg: "RS256", kid: "service-key" }).setSubject("example-service").setIssuer("hive-iam").setAudience("hivemem")
+    .setJti("service-jti").setIssuedAt(now).setExpirationTime(now + 300).sign(keys.privateKey);
+  const principal = await verify(token);
+  assert.equal(principal.clientId, "example-service");
+  await verify(token);
+  assert.deepEqual(requested, ["https://identity.example.com/jwks"], "keys are fetched once and cached");
+  assert.throws(() => createOathweaveServiceVerifier({ issuers: ["hive-iam"], audience: "hivemem" }), /OATHWEAVE_JWKS_URL/);
 });
