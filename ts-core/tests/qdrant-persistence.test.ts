@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -367,5 +367,192 @@ describe("agent IDs Qdrant cannot use as a collection name", () => {
       const again = await new QdrantHiveMemPersistence({ url: fake.baseUrl }).load();
       assert.equal(again.memories.filter((item) => item.id === "long-1").length, 1);
     } finally { await new Promise<void>((resolve) => fake.server.close(() => resolve())); }
+  });
+});
+
+/** Store state with every collection sorted, for comparing two routes to the same data. */
+function normalized(snapshot: ReturnType<InMemoryHiveMemStore["snapshot"]>): Record<string, unknown[]> {
+  const output: Record<string, unknown[]> = {};
+  for (const [key, records] of Object.entries(snapshot)) {
+    output[key] = [...(records as Array<Record<string, unknown>>)].map((record) => JSON.parse(JSON.stringify(record)) as Record<string, unknown>)
+      .sort((left, right) => String(left.id ?? left.agent_id ?? left.session_id ?? left.workspace_id).localeCompare(String(right.id ?? right.agent_id ?? right.session_id ?? right.workspace_id)));
+  }
+  return output;
+}
+
+/** A fetch that records upserted points and can fail a matching request once. */
+function recordingFetch(journalPath?: string) {
+  const state = { upserts: [] as Array<{ collection: string; ids: string[] }>, deletes: [] as Array<{ collection: string; ids: string[] }>, journals: [] as unknown[], failOn: null as RegExp | null };
+  const fetchImpl: typeof fetch = async (url, init) => {
+    const target = String(url);
+    const collection = decodeURIComponent(target.split("/collections/")[1]?.split("/")[0]?.split("?")[0] ?? "");
+    if (init?.method === "PUT" && target.includes("/points?")) {
+      if (journalPath && existsSync(journalPath)) state.journals.push(JSON.parse(readFileSync(journalPath, "utf8")));
+      state.upserts.push({ collection, ids: (JSON.parse(String(init.body)) as { points: Array<{ id: string; payload: { id?: string } }> }).points.map((item) => String(item.payload.id ?? item.id)) });
+    }
+    if (init?.method === "POST" && target.includes("/points/delete")) state.deletes.push({ collection, ids: (JSON.parse(String(init.body)) as { points: string[] }).points });
+    if (state.failOn?.test(target)) { state.failOn = null; throw new Error("process interruption"); }
+    return fetch(url, init);
+  };
+  return { state, fetchImpl };
+}
+
+describe("incremental checkpoints", () => {
+  it("write only the changed records after the first full checkpoint, and journal only them", async () => {
+    const fake = await startFakeQdrant(); const directory = mkdtempSync(join(tmpdir(), "hivemem-delta-"));
+    try {
+      const journalPath = join(directory, "pending.json");
+      const { state, fetchImpl } = recordingFetch(journalPath);
+      const persistence = new QdrantHiveMemPersistence({ url: fake.baseUrl, journalPath, fetchImpl });
+      const store = new InMemoryHiveMemStore({ snapshot: await persistence.load(), persistence });
+      const memories = Array.from({ length: 40 }, (_, index) => store.createMemory(principal(), { content: `bulk fixture ${index}`, type: "semantic", scope: "private" }));
+      await store.flushPersistence();
+      const first = state.journals.at(-1) as { version?: number; snapshot?: { memories: unknown[] } };
+      assert.equal(first.version, undefined, "the first checkpoint is full, in the format earlier releases replay");
+      assert.equal(first.snapshot?.memories.length, 40);
+
+      state.upserts.length = 0; state.journals.length = 0;
+      store.updateMemory(principal(), memories[7]!.id, { content: "one changed memory" });
+      await store.flushPersistence();
+      const memoryWrites = state.upserts.filter((entry) => entry.collection.endsWith("_semantic")).flatMap((entry) => entry.ids);
+      assert.deepEqual(memoryWrites, [memories[7]!.id]);
+      const journal = state.journals[0] as { version: number; delta: { memories: { upserts: Array<{ id: string }>; deletes: string[] } }; vectors: unknown[] };
+      assert.equal(journal.version, 2);
+      assert.deepEqual(journal.delta.memories.upserts.map((item) => item.id), [memories[7]!.id]);
+      assert.equal(journal.vectors.length, 1);
+      assert.equal(existsSync(journalPath), false);
+      assert.equal([...fake.points.get("agent-a_private_semantic")!.values()].find((item) => item.payload.id === memories[7]!.id)?.payload.content, "one changed memory");
+    } finally { await new Promise<void>((resolve) => fake.server.close(() => resolve())); rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it("leave Qdrant holding exactly what a full save would, through moves, purges and metadata changes", async () => {
+    const fake = await startFakeQdrant();
+    try {
+      const persistence = new QdrantHiveMemPersistence({ url: fake.baseUrl });
+      const store = new InMemoryHiveMemStore({ snapshot: await persistence.load(), persistence });
+      const admin = principal("operator", "admin");
+      const shared = store.createMemory(principal(), { content: "shared then private", type: "semantic", scope: "shared" });
+      const doomed = store.createMemory(principal(), { content: "deleted then purged", type: "episodic", scope: "private" });
+      const kept = store.createMemory(principal("agent-b"), { content: "untouched", type: "procedural", scope: "private" });
+      await store.flushPersistence();
+      const vector = [...fake.points.get("shared_semantic")!.values()][0]!.vector;
+      store.privatizeMemory(principal(), { memory_id: shared.id });
+      store.deleteMemory(principal(), doomed.id);
+      const session = store.createSession(principal(), { session_id: "delta-session", scope: "private", workspace_id: "default" });
+      const webhook = store.createWebhook(principal(), { url: "https://example.com/delta-hook", workspace_id: "default" });
+      await store.flushPersistence();
+      store.purgeMemories(admin, { workspace_id: "default", dry_run: false });
+      store.deleteSession(principal(), session.session_id);
+      store.deleteWebhook(principal(), webhook.id);
+      store.updateMemory(principal("agent-b"), kept.id, { tags: ["changed"] });
+      await store.flushPersistence();
+
+      assert.equal(fake.points.get("shared_semantic")!.size, 0, "the moved memory's old copy is gone");
+      assert.deepEqual([...fake.points.get("agent-a_private_semantic")!.values()].map((item) => [item.payload.id, item.vector]), [[shared.id, vector]]);
+      assert.equal([...(fake.points.get("agent-a_private_episodic")?.values() ?? [])].some((item) => item.payload.id === doomed.id), false, "the purged memory is deleted from Qdrant");
+      const reloaded = new InMemoryHiveMemStore({ snapshot: await new QdrantHiveMemPersistence({ url: fake.baseUrl }).load() });
+      assert.deepEqual(normalized(reloaded.snapshot()), normalized(store.snapshot()));
+
+      // A full save over the same state changes nothing more.
+      const before = JSON.stringify([...fake.points].map(([name, points]) => [name, [...points.keys()].sort()]));
+      await new QdrantHiveMemPersistence({ url: fake.baseUrl }).load().then(async () => {
+        const full = new QdrantHiveMemPersistence({ url: fake.baseUrl }); await full.load(); await full.save(store.snapshot());
+      });
+      assert.equal(JSON.stringify([...fake.points].map(([name, points]) => [name, [...points.keys()].sort()])), before);
+    } finally { await new Promise<void>((resolve) => fake.server.close(() => resolve())); }
+  });
+
+  it("replay an interrupted delta from its journal on the next start, keeping the vector", async () => {
+    const fake = await startFakeQdrant(); const directory = mkdtempSync(join(tmpdir(), "hivemem-delta-journal-"));
+    try {
+      const journalPath = join(directory, "pending.json");
+      const { state, fetchImpl } = recordingFetch(journalPath);
+      const persistence = new QdrantHiveMemPersistence({ url: fake.baseUrl, journalPath, fetchImpl });
+      const store = new InMemoryHiveMemStore({ snapshot: await persistence.load(), persistence });
+      const record = store.createMemory(principal(), { content: "delta journal fixture", type: "semantic", scope: "shared" });
+      await store.flushPersistence();
+      const original = [...fake.points.get("shared_semantic")!.values()][0]!; original.vector = Array<number>(768).fill(0.5);
+      // The in-process copy of the vector is what the delta carries; make it match the stored one.
+      const restarted = new QdrantHiveMemPersistence({ url: fake.baseUrl, journalPath, fetchImpl });
+      const live = new InMemoryHiveMemStore({ snapshot: await restarted.load(), persistence: restarted });
+      live.createMemory(principal(), { content: "full checkpoint first", type: "episodic", scope: "private" });
+      await live.flushPersistence();
+      state.failOn = /agent-a_private_semantic\/points\?/u;
+      live.privatizeMemory(principal(), { memory_id: record.id });
+      await assert.rejects(live.flushPersistence(), /indeterminate/);
+      assert.equal(fake.points.get("shared_semantic")!.size, 0, "the old copy went first");
+      const pending = JSON.parse(readFileSync(journalPath, "utf8")) as { version: number };
+      assert.equal(pending.version, 2);
+
+      const recovered = await new QdrantHiveMemPersistence({ url: fake.baseUrl, journalPath }).load();
+      assert.equal(existsSync(journalPath), false);
+      assert.equal(recovered.memories.filter((item) => item.id === record.id).length, 1);
+      assert.equal(recovered.memories.find((item) => item.id === record.id)!.scope, "private");
+      assert.deepEqual([...fake.points.get("agent-a_private_semantic")!.values()].find((item) => item.payload.id === record.id)!.vector, original.vector);
+    } finally { await new Promise<void>((resolve) => fake.server.close(() => resolve())); rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it("refuse a journal format they do not know instead of guessing", async () => {
+    const fake = await startFakeQdrant(); const directory = mkdtempSync(join(tmpdir(), "hivemem-delta-format-"));
+    try {
+      const journalPath = join(directory, "pending.json");
+      writeFileSync(journalPath, JSON.stringify({ version: 3, delta: {} }));
+      await assert.rejects(new QdrantHiveMemPersistence({ url: fake.baseUrl, journalPath }).load(), /Unsupported pending HiveMem journal format 3/);
+      writeFileSync(journalPath, JSON.stringify({ version: 2, delta: { memories: { upserts: [], deletes: [] } } }));
+      await assert.rejects(new QdrantHiveMemPersistence({ url: fake.baseUrl, journalPath }).load(), /Invalid pending HiveMem journal/);
+      assert.equal(existsSync(journalPath), true, "a refused journal is kept for the operator");
+    } finally { await new Promise<void>((resolve) => fake.server.close(() => resolve())); rmSync(directory, { recursive: true, force: true }); }
+  });
+});
+
+describe("checkpoint selection", () => {
+  function spyPersistence(options: { delta?: boolean } = {}) {
+    const calls: string[] = [];
+    let fail = false;
+    const persistence = {
+      kind: "qdrant" as const,
+      load: async () => new InMemoryHiveMemStore().snapshot(),
+      save: async () => { calls.push("full"); if (fail) throw new Error("unavailable"); },
+      ...(options.delta === false ? {} : { saveDelta: async () => { calls.push("delta"); if (fail) throw new Error("unavailable"); } }),
+    };
+    return { persistence, calls, failNext: (value: boolean) => { fail = value; } };
+  }
+
+  it("is full first, incremental next, and full again after a failure", async () => {
+    const { persistence, calls, failNext } = spyPersistence();
+    const store = new InMemoryHiveMemStore({ persistence });
+    store.createMemory(principal(), { content: "first", type: "semantic", scope: "private" });
+    await store.flushPersistence();
+    store.createMemory(principal(), { content: "second", type: "semantic", scope: "private" });
+    await store.flushPersistence();
+    failNext(true);
+    store.createMemory(principal(), { content: "third", type: "semantic", scope: "private" });
+    await assert.rejects(store.flushPersistence(), /indeterminate/);
+    failNext(false);
+    store.retryPersistence();
+    await store.flushPersistence();
+    store.createMemory(principal(), { content: "fourth", type: "semantic", scope: "private" });
+    await store.flushPersistence();
+    assert.deepEqual(calls, ["full", "delta", "delta", "full", "delta"]);
+  });
+
+  it("always saves the whole snapshot through a persistence without saveDelta", async () => {
+    const { persistence, calls } = spyPersistence({ delta: false });
+    const store = new InMemoryHiveMemStore({ persistence });
+    for (const content of ["one", "two"]) { store.createMemory(principal(), { content, type: "semantic", scope: "private" }); await store.flushPersistence(); }
+    assert.deepEqual(calls, ["full", "full"]);
+  });
+
+  it("fails the checkpoint when a record was edited in place (HIVEMEM_PERSISTENCE_VERIFY)", async () => {
+    assert.equal(process.env.HIVEMEM_PERSISTENCE_VERIFY, "1", "the test script turns verification on");
+    const { persistence, calls } = spyPersistence();
+    const store = new InMemoryHiveMemStore({ persistence });
+    const memory = store.createMemory(principal(), { content: "tracked", type: "semantic", scope: "private" });
+    await store.flushPersistence();
+    // A change that bypasses the map would be lost by the next incremental checkpoint.
+    (store as unknown as { memories: Map<string, { content: string }> }).memories.get(memory.id)!.content = "edited in place";
+    store.createMemory(principal(), { content: "another write", type: "semantic", scope: "private" });
+    await assert.rejects(store.flushPersistence(), /indeterminate/);
+    assert.deepEqual(calls, ["full"]);
   });
 });

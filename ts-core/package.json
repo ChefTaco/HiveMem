@@ -38,7 +38,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "typecheck": "tsc --noEmit",
     "build": "tsc && node -e \"require('node:fs').chmodSync('dist/src/cli.js', 0o755)\"",
-    "test": "npm run build && node --test dist/tests/*.test.js",
+    "test": "npm run build && HIVEMEM_PERSISTENCE_VERIFY=1 node --test dist/tests/*.test.js",
     "start": "node dist/src/cli.js",
     "dev": "node --experimental-strip-types src/cli.ts",
     "test:dual-stack": "npm run build && node --test dist/tests/dual-stack-compat.test.js",

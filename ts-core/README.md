@@ -162,7 +162,7 @@ All configuration comes from environment variables. Only `HIVEMEM_JWT_SECRET` is
 | `HIVEMEM_RENEWAL_SECRET` | unset | Separate secret that enables `POST /v1/auth/renew` renewal grants. Must differ from `HIVEMEM_JWT_SECRET`. |
 | `HIVEMEM_TS_CORE_HOST` | `127.0.0.1` | Listen address. Use `0.0.0.0` only with TLS or behind a trusted proxy. |
 | `HIVEMEM_WEB_PORT` | `18790` | Listen port (`HIVEMEM_TS_CORE_PORT` overrides it). |
-| `HIVEMEM_STORAGE_PATH` | `${HIVE_HOME:-~/.hive}/memory` | Local state: writer lock, write-recovery journal, and token revocation list. Created with mode `0700`. Memories themselves live in Qdrant. |
+| `HIVEMEM_STORAGE_PATH` | `${HIVE_HOME:-~/.hive}/memory` | Local state: writer lock, write-recovery journal (`pending-write.json`, present only while a checkpoint is in flight), and token revocation list. Created with mode `0700`. Memories themselves live in Qdrant. |
 | `HIVEMEM_TS_PERSISTENCE` | `qdrant` | `qdrant`, or `memory` for a throwaway server whose data is lost when it stops. |
 | `HIVEMEM_QDRANT_URL` | `http://127.0.0.1:6333` | Qdrant REST URL. Keep Qdrant on localhost or a private network. |
 | `QDRANT_API_KEY` | unset | Sent to Qdrant when set. |
