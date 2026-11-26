@@ -7,6 +7,7 @@ import { isDeepStrictEqual } from "node:util";
 import { hiveAdminProvisioningDigest, parseHiveAdminProvisioningRequest, type HiveAdminProvisioningRequest, type HiveAdminProvisioningReceipt } from "./hive-admin-provisioning.js";
 import { auditExportPage, HIVEMEM_AUDIT_KINDS, type HiveAuditRecord } from "./audit-export.js";
 import { memoryCollectionName, privateCollectionNames } from "./collection-names.js";
+import { hiveEventPage } from "./hive-events.js";
 import { deterministicEmbedding, isEmptyDelta, snapshotRecordKey, type HiveMemDelta, type HiveMemPersistence, type HiveMemSnapshot, type PersistedAgentRecord } from "./persistence.js";
 import { TrackedMap } from "./tracked-map.js";
 import {
@@ -1062,6 +1063,7 @@ function parseWebhookCreate(body: unknown): {
   headers: Record<string, string>;
   has_secret: boolean;
   metadata: JsonObject;
+  all_members: boolean;
 } {
   const raw = asJsonObject(body, "webhook");
   const url = requiredString(raw.url, "url");
@@ -1074,6 +1076,7 @@ function parseWebhookCreate(body: unknown): {
     headers: parseWebhookHeaders(raw.headers),
     has_secret: typeof raw.secret === "string" && raw.secret.trim().length > 0,
     metadata: optionalJsonObject(raw.metadata, "metadata") ?? {},
+    all_members: optionalBoolean(raw.all_members, "all_members") ?? false,
   };
 }
 
@@ -2435,9 +2438,11 @@ export class InMemoryHiveMemStore {
       headers: raw.headers === undefined ? endpoint.headers : parseWebhookHeaders(raw.headers),
       has_secret: typeof raw.secret === "string" ? raw.secret.trim().length > 0 : endpoint.has_secret,
       metadata: optionalJsonObject(raw.metadata, "metadata") ?? endpoint.metadata,
+      all_members: optionalBoolean(raw.all_members, "all_members") ?? endpoint.all_members ?? false,
       updated_at: nowIso(),
     };
-    this.assertWorkspacePermission(principal, updated.workspace_id, 'write');
+    // Observing every member's writes is a workspace owner or admin right.
+    this.assertWorkspacePermission(principal, updated.workspace_id, updated.all_members ? "admin" : 'write');
     this.webhooks.set(endpointId, { ...this.webhooks.get(endpointId), ...updated, ...(typeof (body as Record<string, unknown>)?.secret === "string" ? { signing_secret: (body as Record<string, string>).secret! } : {}) } as WebhookEndpointRecord);
     this.queuePersistence();
     return updated;
@@ -2854,6 +2859,21 @@ export class InMemoryHiveMemStore {
     // A workspace-restricted administrator sees only its workspaces, as in the admin audit view.
     const include = Array.isArray(workspaces) ? (entry: JsonObject) => typeof entry.workspace_id === "string" && workspaces.includes(entry.workspace_id) : undefined;
     return auditExportPage(this.operations.values(), params, include as ((entry: Readonly<Record<string, unknown>>) => boolean) | undefined);
+  }
+
+  /** HiveEvent v1 feed page for administrators; a workspace-restricted one sees only its workspaces. */
+  hiveEvents(principal: AuthPrincipal, params: URLSearchParams): ReturnType<typeof hiveEventPage> {
+    if (!isAdmin(principal)) throw new ForbiddenError("Admin role required");
+    const workspaces = principal.rawClaims.workspace_ids;
+    const includeWorkspace = Array.isArray(workspaces) ? (workspaceId: string) => workspaces.includes(workspaceId) : () => true;
+    const worker = this.workerHealth();
+    return hiveEventPage({
+      operations: this.operations.values(),
+      webhookDeliveries: this.webhookDeliveries.values(),
+      queueJobs: this.queueJobs.values(),
+      staleWorkerHeartbeat: worker.state === "stale" && !Array.isArray(workspaces) ? worker.heartbeat : null,
+      includeWorkspace,
+    }, params, Date.now(), (count) => console.warn(`hive events: dropped ${count} invalid event(s)`));
   }
 
   capabilities(): Record<string, string> {
@@ -3563,6 +3583,7 @@ export class InMemoryHiveMemStore {
       headers: parsed.headers,
       has_secret: parsed.has_secret,
       metadata: parsed.metadata,
+      all_members: parsed.all_members,
       last_status: null,
       last_error: null,
       last_delivered_at: null,
@@ -3570,7 +3591,7 @@ export class InMemoryHiveMemStore {
       updated_at: timestamp,
       deleted_at: null,
     };
-    this.assertWorkspacePermission(principal, parsed.workspace_id, "write");
+    this.assertWorkspacePermission(principal, parsed.workspace_id, parsed.all_members ? "admin" : "write");
     this.webhooks.set(endpoint.id, endpoint);
     this.queuePersistence();
     return this.publicWebhook(endpoint);
@@ -3580,7 +3601,7 @@ export class InMemoryHiveMemStore {
     const parsed = parseWebhookTest(body);
     this.assertWorkspacePermission(principal, parsed.workspace_id, "write");
     const eventId = randomUUID();
-    const endpoints = this.matchingWebhooks(principal, parsed.workspace_id, parsed.event_type, true);
+    const endpoints = this.matchingWebhooks(principal, parsed.workspace_id, parsed.event_type, true, false);
     const deliveryIds = endpoints.map((endpoint) => this.enqueueWebhookDelivery(endpoint, eventId, parsed.event_type, { data: parsed.data, test: true }).id);
     return { event_id: eventId, queued_deliveries: deliveryIds.length, delivery_ids: deliveryIds };
   }
@@ -3606,10 +3627,14 @@ export class InMemoryHiveMemStore {
     return delivery;
   }
 
-  private matchingWebhooks(principal: AuthPrincipal, workspaceId: string, eventType: WebhookEventType, includeTests = false): WebhookEndpointRecord[] {
+  /**
+   * The writer's own endpoints, and (with `includeMembers`) other owners' `all_members` endpoints
+   * in the workspace. Test events go only to the caller's own endpoints.
+   */
+  private matchingWebhooks(principal: AuthPrincipal, workspaceId: string, eventType: WebhookEventType, includeTests = false, includeMembers = true): WebhookEndpointRecord[] {
     return [...this.webhooks.values()]
       .filter((endpoint) => !endpoint.deleted_at && endpoint.enabled)
-      .filter((endpoint) => endpoint.owner_agent_id === principal.agentId)
+      .filter((endpoint) => endpoint.owner_agent_id === principal.agentId || (includeMembers && endpoint.all_members === true))
       .filter((endpoint) => endpoint.workspace_id === workspaceId)
       .filter((endpoint) => includeTests || endpoint.event_types.includes(eventType));
   }
@@ -3617,8 +3642,41 @@ export class InMemoryHiveMemStore {
   private emitWebhookForResource(principal: AuthPrincipal, eventType: WebhookEventType, workspaceId: string, resourceType: string, resourceId: string, data: JsonObject): void {
     const eventId = randomUUID();
     for (const endpoint of this.matchingWebhooks(principal, workspaceId, eventType)) {
-      this.enqueueWebhookDelivery(endpoint, eventId, eventType, { resource_type: resourceType, resource_id: resourceId, data });
+      if (endpoint.owner_agent_id === principal.agentId) {
+        this.enqueueWebhookDelivery(endpoint, eventId, eventType, { resource_type: resourceType, resource_id: resourceId, data });
+        continue;
+      }
+      const shared = this.memberEventData(endpoint, resourceType, resourceId, data);
+      if (shared) this.enqueueWebhookDelivery(endpoint, eventId, eventType, { resource_type: resourceType, resource_id: resourceId, member_event: true, actor_agent_id: principal.agentId, data: shared });
     }
+  }
+
+  /** Whether an endpoint's owner still administers its workspace (so may observe every member). */
+  private endpointOwnerAdministers(endpoint: WebhookEndpointRecord): boolean {
+    try { this.assertWorkspacePermission({ agentId: endpoint.owner_agent_id, scopes: [], rawClaims: {} }, endpoint.workspace_id, "admin"); return true; }
+    catch { return false; }
+  }
+
+  /**
+   * What an `all_members` endpoint may receive about another member's write: only a record its
+   * owner could read, and no content for a sensitive, restricted or redacted memory. Null skips it.
+   */
+  private memberEventData(endpoint: WebhookEndpointRecord, resourceType: string, resourceId: string, data: JsonObject): JsonObject | null {
+    if (!this.endpointOwnerAdministers(endpoint)) return null;
+    const owner: AuthPrincipal = { agentId: endpoint.owner_agent_id, scopes: [], rawClaims: {} };
+    if (resourceType === "memory") {
+      const memory = this.memories.get(resourceId);
+      if (!memory || memory.workspace_id !== endpoint.workspace_id || !canRead(memory, owner)) return null;
+      const withheld = memory.sensitivity === "sensitive" || memory.sensitivity === "restricted" || memory.redaction_policy !== "none";
+      return { ...data, agent_id: memory.agent_id, sensitivity: memory.sensitivity, redaction_policy: memory.redaction_policy, ...(withheld ? { content: null, content_withheld: true } : {}) };
+    }
+    if (resourceType === "session") {
+      const session = this.sessions.get(resourceId);
+      if (!session || session.workspace_id !== endpoint.workspace_id || (session.scope === "private" && session.owner_agent_id !== owner.agentId)) return null;
+      return { ...data, owner_agent_id: session.owner_agent_id };
+    }
+    // Reasoning results describe one owner's peers; they stay with that owner's endpoints.
+    return null;
   }
 
   private enqueueWebhookDelivery(endpoint: WebhookEndpointRecord, eventId: string, eventType: WebhookEventType, payload: JsonObject): WebhookDeliveryRecord {
@@ -3987,6 +4045,7 @@ export class InMemoryHiveMemStore {
       return skip('resource_no_longer_available');
     }
     if (endpoint.workspace_id !== delivery.workspace_id) return skip('endpoint_workspace_changed');
+    if (job.payload.member_event === true && (!endpoint.all_members || !this.endpointOwnerAdministers(endpoint))) return skip('workspace_access_withdrawn');
     try { this.assertWorkspacePermission({ agentId: endpoint.owner_agent_id, scopes: ["*"], rawClaims: {} }, endpoint.workspace_id, "read"); }
     catch { return skip('workspace_access_withdrawn'); }
     const secret = (endpoint as WebhookEndpointRecord & { signing_secret?: string }).signing_secret;

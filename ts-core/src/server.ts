@@ -12,6 +12,7 @@ import type { AuthPrincipal, ChatResponse } from "./types.js";
 import { ValidationError } from "./validation.js";
 import { TokenRevocationStore } from "./revocation-store.js";
 import { memoryOperations } from './operations.js';
+import { HIVE_EVENTS_PATH } from "./hive-events.js";
 import { HIVEMEM_AUDIT_EXPORT_PATH, HIVEMEM_AUDIT_READ_PERMISSION, HIVEMEM_AUDIT_READ_SCOPE } from "./audit-export.js";
 import { createHealth } from "@hivemagnus/hive-common/health";
 import { createRequestContext, readIdempotencyKey, runWithRequestContext } from "@hivemagnus/hive-common/context";
@@ -948,6 +949,12 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
         if (!isAdminPrincipal(principal) && !auditService) throw new AuthError(403, `Admin role or the ${HIVEMEM_AUDIT_READ_PERMISSION} service permission is required`);
         response.setHeader("Cache-Control", "no-store");
         await sendJson(response, 200, store.auditExport(principal, url.searchParams));
+        return;
+      }
+      if (method === "GET" && url.pathname === HIVE_EVENTS_PATH) {
+        // Administrators only, as the queue and webhook views they summarize.
+        response.setHeader("Cache-Control", "no-store");
+        await sendJson(response, 200, store.hiveEvents(principal, url.searchParams));
         return;
       }
       if (method === "GET" && url.pathname === "/v1/capabilities") { await sendJson(response, 200, store.capabilities()); return; }

@@ -646,6 +646,8 @@ export interface WebhookEndpointRecord {
   headers: Record<string, string>;
   has_secret: boolean;
   metadata: JsonObject;
+  /** Also receive other members' writes in the workspace (owner or admin only). Absent is false. */
+  all_members?: boolean;
   last_status: WebhookDeliveryStatus | null;
   last_error: string | null;
   last_delivered_at: string | null;

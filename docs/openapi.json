@@ -714,6 +714,203 @@
         ],
         "type": "object"
       },
+      "HiveEvent": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "link": {
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "product": {
+                "const": "hivemem",
+                "type": "string"
+              }
+            },
+            "required": [
+              "product",
+              "path"
+            ],
+            "type": "object"
+          },
+          "occurredAt": {
+            "type": "string"
+          },
+          "product": {
+            "const": "hivemem",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "type": "string"
+          },
+          "sourceRef": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "subject": {
+            "additionalProperties": false,
+            "properties": {
+              "actorId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "actorId"
+            ],
+            "type": "object"
+          },
+          "summary": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "memory.conflict.detected",
+              "webhook.delivery.failed",
+              "queue.job.dead_letter",
+              "worker.stale"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "product",
+          "type",
+          "severity",
+          "title",
+          "summary",
+          "occurredAt",
+          "link"
+        ],
+        "type": "object"
+      },
+      "HiveEventPage": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "link": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "product": {
+                      "const": "hivemem",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "product",
+                    "path"
+                  ],
+                  "type": "object"
+                },
+                "occurredAt": {
+                  "type": "string"
+                },
+                "product": {
+                  "const": "hivemem",
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "info",
+                    "warning",
+                    "critical"
+                  ],
+                  "type": "string"
+                },
+                "sourceRef": {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                "subject": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "actorId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "actorId"
+                  ],
+                  "type": "object"
+                },
+                "summary": {
+                  "maxLength": 2000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "title": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "memory.conflict.detected",
+                    "webhook.delivery.failed",
+                    "queue.job.dead_letter",
+                    "worker.stale"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "product",
+                "type",
+                "severity",
+                "title",
+                "summary",
+                "occurredAt",
+                "link"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
       "MemoryAgent": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -4469,6 +4666,10 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "all_members": {
+            "description": "Also receive other members' writes in the workspace, without content for sensitive, restricted or redacted memories. Needs workspace owner or admin.",
+            "type": "boolean"
+          },
           "created_at": {
             "type": "string"
           },
@@ -4862,6 +5063,10 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "all_members": {
+            "description": "Also receive other members' writes in the workspace, without content for sensitive, restricted or redacted memories. Needs workspace owner or admin.",
+            "type": "boolean"
+          },
           "enabled": {
             "type": "boolean"
           },
@@ -6282,6 +6487,60 @@
           }
         },
         "summary": "Readiness"
+      }
+    },
+    "/v1/hive/events": {
+      "get": {
+        "parameters": [
+          {
+            "description": "Opaque cursor from a previous page's nextCursor",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HiveEventPage"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "description": "Malformed cursor or limit"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Administrator required"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "HiveEvent v1 feed for the suite inbox: memory conflicts, failed webhook deliveries, dead-lettered queue jobs and a stale worker, oldest first by (occurredAt, id), 14-day retention; administrators only"
       }
     },
     "/v1/memories": {

@@ -15,6 +15,13 @@
 
 ### Added
 
+- `GET /v1/hive/events`, a HiveEvent v1 feed for the suite inbox (administrators): memory
+  conflicts, failed webhook deliveries, dead-lettered queue jobs and a stale queue worker, with
+  14-day retention. Announce it to HiveXUI with the registry capability
+  `{"events.v1":{"path":"/v1/hive/events"}}`.
+- Workspace-level webhooks: `all_members: true` (workspace owner or admin) also delivers other
+  members' `memory.created` and `session.created` events, only for records the endpoint owner
+  could read, and without content for sensitive, restricted or redacted memories.
 - Error bodies carry the suite envelope `error: { code, message, requestId }` next to the
   unchanged `detail`, so HiveXUI and Cindertrace get stable codes and a request ID.
 - A per-principal token bucket on the routes that scan memory in process: memory search
