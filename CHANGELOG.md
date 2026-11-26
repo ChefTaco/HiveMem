@@ -2,13 +2,29 @@
 
 ## [Unreleased]
 
-### Fixed
+## [1.10.0] - 2026-11-26
+
+### Upgrade notes
+
+- `/v1/health` now reports `release` as `1.10.0` (the package version) instead of the frozen
+  `1.2.2`. Update any monitoring or script that compared that field to `1.2.2`.
+- Idempotency records live in the server process and expire after 24 hours; a restart forgets
+  them.
+- TypeScript SDK 1.3.0 and the Python SDK in this repository send an `Idempotency-Key` on every
+  POST and retry a POST after a 5xx. A server older than 1.10.0 ignores the key, so a retried
+  POST there can write twice: against older servers pass `idempotencyKeys: false` (TypeScript)
+  or `idempotency_keys=False` (Python).
+
+### Added
 
 - Side-effecting `POST` routes accept an `Idempotency-Key` header. A repeated key from the same
   principal replays the first 2xx answer (`Idempotent-Replayed: true`) instead of writing again;
   the answer is recorded before persistence is awaited, so a retry after an indeterminate `503`
   replays once persistence recovers. A different request under the same key is `422`, a
   concurrent one `409`. Records are process-local and expire after 24 hours.
+
+### Fixed
+
 - The TypeScript and Python SDKs no longer retry a POST blindly after a 5xx: they send a
   generated `Idempotency-Key` on every POST and retry only with one, back off exponentially with
   jitter (the TypeScript SDK retried immediately), honour `Retry-After` and do not retry 501.
