@@ -1071,7 +1071,7 @@ These are development/CI checks, not public REST endpoints.
 
 ### Python SDK
 
-The source package in `sdks/python` provides sync and async clients, request helpers, context-format adapters, and typed HTTP errors. Non-loopback endpoints require HTTPS with system trust or a private-PKI trust anchor supplied through `ca_file` / `HIVEMEM_CA_FILE`; verification cannot be disabled.
+The source package in `sdks/python` (installed from this repository; it is not published to PyPI) provides sync and async clients, request helpers, context-format adapters, typed HTTP errors, an Oathweave `token_provider` with one re-authentication after a 401, and `export_audit()`. Non-loopback endpoints require HTTPS with system trust or a private-PKI trust anchor supplied through `ca_file` / `HIVEMEM_CA_FILE`; verification cannot be disabled.
 
 ```bash
 pip install -e sdks/python

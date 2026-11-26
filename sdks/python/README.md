@@ -4,6 +4,9 @@ Official source package for Python clients integrating with HiveMem.
 
 ## Install from this repository
 
+The Python SDK is not published to PyPI; install it from a checkout of this repository (its
+`pyproject.toml` version is not a release number). The TypeScript SDK is the published client.
+
 ```bash
 pip install -e sdks/python
 ```
@@ -40,5 +43,19 @@ a POST only when it carries an `Idempotency-Key`. The client generates one for e
 you pass your own in `headers` or set `idempotency_keys=False` (then POSTs are never retried). A
 HiveMem server with idempotency support replays the first result for a repeated key; an older
 server ignores the header.
+
+Service identities: pass `token_provider`, a function taking `force_refresh` and returning a
+bearer token, instead of a fixed `token`. It is called before every request (with
+`force_refresh=False`, so it may return a cached token) and once more with `force_refresh=True`
+after a 401, which is then retried once with the fresh token. Use it for a short-lived Oathweave
+client-credentials token, which can expire or be revoked between requests:
+
+```python
+client = HiveMemClient(base_url="https://hivemem.example.com", token_provider=my_oathweave_tokens)
+page = client.export_audit(limit=200)          # needs admin, or hivemem:audit:read
+while page["data"]:
+    handle(page["data"])
+    page = client.export_audit(after=page["nextCursor"], limit=200)
+```
 
 Configuration precedence: explicit constructor arguments, then `HIVEMEM_API_URL`, `HIVEMEM_TOKEN`/`HIVEMEM_MCP_TOKEN`, `HIVEMEM_WORKSPACE_ID`, `HIVEMEM_CA_FILE`, then local defaults. Non-loopback endpoints require HTTPS; certificate and hostname verification cannot be disabled, and redirects are never followed with bearer credentials.

@@ -90,6 +90,7 @@ class _BaseClient:
         ca_file: str | None = None,
         request_id_provider: Callable[[], str] | None = None,
         auth_refresh: Callable[[], str | None] | None = None,
+        token_provider: Callable[[bool], str | None] | None = None,
         on_request: Callable[[str, str, dict[str, Any]], None] | None = None,
         on_response: Callable[[httpx.Response], None] | None = None,
     ) -> None:
@@ -108,8 +109,22 @@ class _BaseClient:
         self.ca_file = str(ca_file or os.getenv("HIVEMEM_CA_FILE") or "").strip()
         self.request_id_provider = request_id_provider
         self.auth_refresh = auth_refresh
+        # Called before every request with force_refresh=False, and once with force_refresh=True
+        # after a 401, which is then retried with the fresh token: a short-lived Oathweave service
+        # token (client credentials) can expire or be revoked between requests.
+        self.token_provider = token_provider
         self.on_request = on_request
         self.on_response = on_response
+
+    def _provide_token(self, force_refresh: bool) -> bool:
+        """Ask token_provider for a token; return whether it gave one."""
+        if not self.token_provider:
+            return False
+        token = self.token_provider(force_refresh)
+        if token:
+            self.token = token
+            return True
+        return False
 
     def _tls_verify(self) -> bool | ssl.SSLContext:
         if not self.ca_file:
@@ -196,7 +211,10 @@ class HiveMemClient(_BaseClient):
 
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
         retryable = self._prepare_retry(method, kwargs)
-        for attempt in range(self.max_retries + 1):
+        self._provide_token(False)
+        reauthorized = False
+        attempt = 0
+        while attempt <= self.max_retries:
             if self.auth_refresh:
                 refreshed = self.auth_refresh()
                 if refreshed:
@@ -207,15 +225,35 @@ class HiveMemClient(_BaseClient):
             response = self._client.request(method, self._url(path), **kwargs)
             if self.on_response:
                 self.on_response(response)
-            if not self._should_retry(retryable, response, attempt):
+            if response.status_code == 401 and self.token_provider and not reauthorized:
+                reauthorized = True
+                if self._provide_token(True):
+                    response.close()
+                    continue
+            attempt += 1
+            if not self._should_retry(retryable, response, attempt - 1):
                 self._raise_for_status(response)
                 return self._json_or_none(response)
             response.close()
-            time.sleep(self._retry_delay(attempt, response))
+            time.sleep(self._retry_delay(attempt - 1, response))
         return None
 
     def health(self) -> dict[str, Any]:
         return self.request("GET", "/v1/health")
+
+    def create_workspace(self, workspace_id: str, **body: Any) -> dict[str, Any]:
+        """Create a workspace owned by the caller; an existing readable one is returned unchanged."""
+        body["workspace_id"] = workspace_id
+        return self.request("POST", "/v1/workspaces", json=body)
+
+    def export_audit(self, *, after: str | None = None, limit: int | None = None) -> dict[str, Any]:
+        """One page of the suite audit export (HiveAuditRecord v1), oldest first.
+
+        Pass the last non-null ``nextCursor`` as ``after``. Needs an administrator, or an
+        Oathweave service token holding ``hivemem:audit:read``.
+        """
+        params = {key: value for key, value in {"after": after, "limit": limit}.items() if value is not None}
+        return self.request("GET", "/v1/audit/export", params=params)
 
     def create_memory(self, **body: Any) -> dict[str, Any]:
         body.setdefault("workspace_id", self.workspace_id)
@@ -376,7 +414,10 @@ class AsyncHiveMemClient(_BaseClient):
 
     async def request(self, method: str, path: str, **kwargs: Any) -> Any:
         retryable = self._prepare_retry(method, kwargs)
-        for attempt in range(self.max_retries + 1):
+        self._provide_token(False)
+        reauthorized = False
+        attempt = 0
+        while attempt <= self.max_retries:
             if self.auth_refresh:
                 refreshed = self.auth_refresh()
                 if refreshed:
@@ -387,15 +428,29 @@ class AsyncHiveMemClient(_BaseClient):
             response = await self._client.request(method, self._url(path), **kwargs)
             if self.on_response:
                 self.on_response(response)
-            if not self._should_retry(retryable, response, attempt):
+            if response.status_code == 401 and self.token_provider and not reauthorized:
+                reauthorized = True
+                if self._provide_token(True):
+                    await response.aclose()
+                    continue
+            attempt += 1
+            if not self._should_retry(retryable, response, attempt - 1):
                 self._raise_for_status(response)
                 return self._json_or_none(response)
             await response.aclose()
-            await _async_sleep(self._retry_delay(attempt, response))
+            await _async_sleep(self._retry_delay(attempt - 1, response))
         return None
 
     async def health(self) -> dict[str, Any]:
         return await self.request("GET", "/v1/health")
+
+    async def create_workspace(self, workspace_id: str, **body: Any) -> dict[str, Any]:
+        body["workspace_id"] = workspace_id
+        return await self.request("POST", "/v1/workspaces", json=body)
+
+    async def export_audit(self, *, after: str | None = None, limit: int | None = None) -> dict[str, Any]:
+        params = {key: value for key, value in {"after": after, "limit": limit}.items() if value is not None}
+        return await self.request("GET", "/v1/audit/export", params=params)
 
     async def create_memory(self, **body: Any) -> dict[str, Any]:
         body.setdefault("workspace_id", self.workspace_id)
