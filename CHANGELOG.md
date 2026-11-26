@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Python SDK: `token_provider` (called before each request and once more after a 401, which is
+  retried with the fresh token), `export_audit()` and `create_workspace()`, matching the
+  TypeScript SDK, in both the sync and async clients. Its README states that the Python SDK is
+  installed from this repository, not PyPI.
+
 ### Upgrade notes
 
 - The write-recovery journal (`pending-write.json`) has a second format for incremental
