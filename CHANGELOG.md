@@ -2,8 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- Oathweave account links (`HIVEMEM_OATHWEAVE_IDENTITIES_JSON`) accept an optional `scopes`
+  ceiling. Oathweave permissions outside it are dropped, so a role that gains
+  `hivemem:admin:all` no longer makes a capped user an administrator. Links without `scopes`
+  behave as before.
+- `HIVEMEM_OATHWEAVE_SESSION_CACHE_MS` (0-5000, default 0) lets an operator reuse a userinfo
+  answer for a few seconds. The default still checks the session on every request.
+
 ### Changed
 
+- HiveMem no longer builds its own JWKS resolver: the shared Oathweave verifier fetches
+  `OATHWEAVE_JWKS_URL` with its cache-age, key-rotation cooldown, no-redirect and timeout
+  rules. User and service verifiers each keep their own cache of that one endpoint.
 - The image's build stage runs Node 26.13.1, the major the runtime ships, instead of Node 24, and
   no longer installs a compiler it never used (installs run with `--ignore-scripts`; the SQLite
   binding is an N-API prebuild).

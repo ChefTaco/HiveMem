@@ -1,11 +1,20 @@
 import { z } from "zod";
 
+/** A HiveMem scope such as `memories:read`, `memories:*` or `admin:all`. */
+const scope = z.string().regex(/^[a-z0-9*-]+(?::[a-z0-9*-]+)*$/);
+
 const link = z
   .object({
     issuer: z.url(),
     subject: z.string().min(1).max(256),
     localId: z.string().min(1).max(256),
     credentialGeneration: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+    /**
+     * Optional ceiling: the most this user may ever receive here. Oathweave permissions outside
+     * it are dropped, so a role that gains `hivemem:admin:all` does not make the user an admin
+     * unless the link allows it. Absent keeps every `hivemem:` permission Oathweave grants.
+     */
+    scopes: z.array(scope).min(1).max(100).optional(),
   })
   .strict();
 export function parseAccountLinks(raw: string) {
@@ -48,7 +57,7 @@ const serviceLink = z
     issuer: z.string().min(1).max(512),
     clientId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),
     localId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
-    scopes: z.array(z.string().regex(/^[a-z0-9*-]+(?::[a-z0-9*-]+)*$/)).min(1).max(100),
+    scopes: z.array(scope).min(1).max(100),
   })
   .strict();
 export type ServiceLink = z.infer<typeof serviceLink>;

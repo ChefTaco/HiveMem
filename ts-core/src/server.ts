@@ -233,6 +233,18 @@ function scopeMatches(granted: string, required: string): boolean {
   return required.startsWith(granted.slice(0, -1));
 }
 
+/**
+ * The scopes both `granted` and `ceiling` allow: a granted scope the ceiling covers, and a
+ * ceiling scope a granted wildcard covers. No ceiling keeps `granted` unchanged.
+ */
+function withinCeiling(granted: readonly string[], ceiling: readonly string[] | undefined): string[] {
+  if (!ceiling) return [...granted];
+  const kept = new Set<string>();
+  for (const scope of granted) if (ceiling.some((limit) => scopeMatches(limit, scope))) kept.add(scope);
+  for (const limit of ceiling) if (granted.some((scope) => scopeMatches(scope, limit))) kept.add(limit);
+  return [...kept];
+}
+
 function requireScope(principal: AuthPrincipal, required: string): void {
   if (isAdminPrincipal(principal) || principal.scopes.some((scope) => scopeMatches(scope, required))) return;
   throw new AuthError(403, `${required} scope is required`);
@@ -542,7 +554,8 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
           let link: AccountLink;
           try {link=linkedAccount(accountLinks,identity);} catch {throw new AuthError(403,'An explicit memory account link is required');}
           const agentId = link.localId;
-          const scopes=identity.permissions.filter(value=>value.startsWith('hivemem:')).map(value=>value.slice('hivemem:'.length));
+          // An optional link ceiling narrows what Oathweave grants; it never widens it.
+          const scopes=withinCeiling(identity.permissions.filter(value=>value.startsWith('hivemem:')).map(value=>value.slice('hivemem:'.length)), link.scopes);
           const principal: AuthPrincipal = {agentId,scopes,rawClaims:{sub:agentId,role:'agent',scope:scopes.join(' '),iss:identity.issuer,session_id:identity.sessionId,token_generation:link.credentialGeneration ?? 0}};
           try {store.getAgent(principal,agentId);} catch {throw new AuthError(403,'The linked memory account does not exist');}
           store.assertCredentialActive(principal);

@@ -9,7 +9,15 @@ and a maximum fifteen-minute lifetime. Permissions are not inferred from roles.
 Native machine credentials and standalone authentication remain available.
 Verification uses the shared `@hivemagnus/hive-common` Oathweave verifier with no
 clock tolerance and an online session check on every request; tokens must carry a
-`roles` array and a `clientId` claim.
+`roles` array and a `clientId` claim. The shared verifier fetches and caches
+`OATHWEAVE_JWKS_URL` itself (bounded cache age, a cooldown on unknown key IDs, no
+redirects, request timeouts).
+
+An operator may opt into reusing a userinfo answer for up to five seconds with
+`HIVEMEM_OATHWEAVE_SESSION_CACHE_MS` (an integer from `0` to `5000`; unset or `0`
+keeps the check on every request). HiveXUI memory pages send several requests at once,
+so a window of 2000-5000 ms cuts Oathweave load while a signed-out session still stops
+working within that window. A failed check is never reused as a success.
 
 `HIVEMEM_OATHWEAVE_IDENTITIES_JSON` is a protected JSON array of explicit account links:
 
@@ -24,6 +32,17 @@ the identity token. An existing rotated account needs its current generation in
 the reviewed mapping. Further rotation or disabling invalidates the link until
 explicit review and configuration update. Browser requests never create accounts
 or synchronize the pin to newer credentials automatically.
+A link may add `scopes`, a ceiling on what that user may ever receive in HiveMem:
+
+```json
+[{"issuer":"https://identity.example.com","subject":"example-subject","localId":"existing-product-identity","scopes":["memories:read","sessions:read"]}]
+```
+
+Without `scopes`, every `hivemem:` permission Oathweave grants applies, so any role holding
+`hivemem:admin:all` makes the user a HiveMem administrator. With it, permissions outside the
+ceiling are dropped (a granted wildcard such as `hivemem:*` narrows to the listed scopes, and a
+listed wildcard such as `memories:*` keeps only what Oathweave grants): Oathweave can narrow,
+never widen, the link. Put `admin:all` in the ceiling only for reviewed administrators.
 Duplicate issuer/subject links, extra fields, and email-based mappings are rejected.
 Do not put live links or credentials in Git. Prepare and review links independently
 for each installation before applying configuration. No API request creates a
@@ -77,7 +96,7 @@ service links; it needs `OATHWEAVE_JWKS_URL`:
 lowercase identifier matching `^[a-z][a-z0-9-]{0,63}$`; a client whose machine policy
 selects the browser issuer is linked with that https issuer instead. Any other issuer
 shape is refused at startup. Service tokens use the same shared verifier and JWKS
-cache as browser tokens. A token is accepted
+endpoint as browser tokens. A token is accepted
 only when it is signed by the configured JWKS, names exactly one linked issuer and
 client (`sub` and `clientId` agree), has the audience `hivemem`, is an access token
 of the `SERVICE_ACCOUNT` actor type without a user session, and lives at most fifteen
