@@ -20,33 +20,38 @@ services:
         limits:
           memory: 512M
 
-  hivemem-api:
+  hivemem:
+    # The release image, built from this checkout's root Dockerfile. Set HIVEMEM_IMAGE to run a
+    # published release instead, for example ghcr.io/cheftaco/hivemem:<version>.
     build:
-      context: ../../../docker
-      dockerfile: server.Dockerfile
-      args:
-        HIVE_PACKAGE: "@hivemagnus/hivemem-server"
-        HIVE_VERSION: "1.2.0"
-    image: ${HIVEMEM_IMAGE:-ghcr.io/cheftaco/hivemem-server:1.2.0}
-    container_name: hivemem-api
+      context: ..
+      dockerfile: Dockerfile
+    image: ${HIVEMEM_IMAGE:-hivemem:local}
+    container_name: hivemem
     restart: unless-stopped
     ports:
-      - "0.0.0.0:${HIVEMEM_PORT:-18790}:${HIVEMEM_PORT:-18790}"
+      - "127.0.0.1:${HIVEMEM_PORT:-18790}:18790"   # plain HTTP, so loopback only
     volumes:
-      - ${HIVEMEM_STORAGE_PATH:-/var/opt/hivemem}:${HIVEMEM_STORAGE_PATH:-/var/opt/hivemem}
+      - hivemem_data:/data
     env_file:
-      - ../.env
+      - ../.env   # needs HIVEMEM_JWT_SECRET; see the Quick Start in README.md
     environment:
-      - HIVEMEM_QDRANT_HOST=qdrant
+      # These override ../.env, whose paths and host belong to a server run outside Docker.
+      - HIVEMEM_QDRANT_URL=http://qdrant:6333
+      - HIVEMEM_STORAGE_PATH=/data/memory
+      - HIVEMEM_TS_CORE_HOST=0.0.0.0
+      - HIVE_HEALTH_URL=http://localhost:18790/v1/health/ready
       - HIVE_AUTO_MIGRATE=${HIVE_AUTO_MIGRATE:-true}
-      - HIVE_UPDATE_CHECK=${HIVE_UPDATE_CHECK:-false}
+      - HIVE_UPDATE_CHECK=false
       - HIVE_AUTO_UPGRADE=false
     depends_on:
       - qdrant
     profiles:
-      - full   # Use `docker compose --profile full up` to also start the TypeScript API container.
-               # For dev, run `npm --prefix ts-core run dev` and only start qdrant here.
+      - full   # `docker compose -f docker/docker-compose.yml --profile full up -d --build` also starts HiveMem.
+               # For development, run `npm --prefix ts-core run dev` and start only qdrant here.
 
 volumes:
   qdrant_data:
+    driver: local
+  hivemem_data:
     driver: local

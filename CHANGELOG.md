@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The image's build stage runs Node 26.13.1, the major the runtime ships, instead of Node 24, and
+  no longer installs a compiler it never used (installs run with `--ignore-scripts`; the SQLite
+  binding is an N-API prebuild).
+- `docker/docker-compose.yml` runs the release image built from the checkout (profile `full`)
+  in place of the retired 1.x `hivemem-server` package example.
+
+### CI
+
+- Tests run on Node 24.22.3 and 26.13.1, audit production dependencies, and run the Python SDK
+  and Hermes plugin suites (including the dual-stack contract against the built server).
+- Every third-party GitHub Action in CI and the image release is pinned to a commit SHA.
+
 ## [1.10.0] - 2026-11-26
 
 ### Upgrade notes
