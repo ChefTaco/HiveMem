@@ -8,7 +8,7 @@ import { hiveAdminProvisioningDigest, parseHiveAdminProvisioningRequest, type Hi
 import { auditExportPage, HIVEMEM_AUDIT_KINDS, type HiveAuditRecord } from "./audit-export.js";
 import { memoryCollectionName, privateCollectionNames } from "./collection-names.js";
 import { hiveEventPage } from "./hive-events.js";
-import { deterministicEmbedding, isEmptyDelta, snapshotRecordKey, type HiveMemDelta, type HiveMemPersistence, type HiveMemSnapshot, type PersistedAgentRecord } from "./persistence.js";
+import { deterministicEmbedding, isEmptyDelta, memoryRecordFromPayload, snapshotRecordKey, type HiveMemDelta, type HiveMemPersistence, type HiveMemSnapshot, type PersistedAgentRecord } from "./persistence.js";
 import { TrackedMap } from "./tracked-map.js";
 import {
   DEFAULT_REASONING_SETTINGS,
@@ -1088,6 +1088,10 @@ function parseWebhookTest(body: unknown): { workspace_id: string; event_type: We
     data: optionalJsonObject(raw.data, "data") ?? {},
   };
 }
+
+/** The most records one workspace import accepts; larger exports are imported in parts. */
+export const WORKSPACE_IMPORT_MAX_MEMORIES = 50_000;
+export const WORKSPACE_IMPORT_MAX_SESSIONS = 10_000;
 
 export class InMemoryHiveMemStore {
   private readonly operations = new TrackedMap<JsonObject>();
@@ -2331,9 +2335,101 @@ export class InMemoryHiveMemStore {
     return { workspace_id: workspaceId, memories: this.readableMemories(principal, workspaceId), sessions: this.listSessions(principal, new URLSearchParams({ workspace_id: workspaceId })), exported_at: nowIso(), format_version: 1 };
   }
 
-  importWorkspace(principal: AuthPrincipal, workspaceId: string): Record<string, unknown> {
-    this.assertWorkspacePermission(principal, workspaceId, "write");
-    return this.unavailable("Workspace import");
+  /**
+   * Import a workspace export (`format_version: 1`) into an existing workspace: a supported way to
+   * move or restore one between installations. Records keep their IDs, owners and timestamps.
+   * Re-importing the same export changes nothing; a record whose ID is already used differently
+   * is a conflict, skipped (the default) or refusing the whole import. `dry_run` defaults to true.
+   * Nothing derived runs: no webhooks, extraction or consolidation jobs.
+   */
+  importWorkspace(principal: AuthPrincipal, workspaceId: string, body: unknown): Record<string, unknown> {
+    if (!isAdmin(principal)) throw new ForbiddenError("Admin role required");
+    if (workspaceId === "*") throw new ValidationError("workspace_id * is the all-workspaces wildcard and cannot be imported into");
+    const target = this.workspaces.get(workspaceId);
+    if (workspaceId !== "default" && (!target || target.deleted_at)) throw new NotFoundError("Create the target workspace (with its members) before importing into it");
+    this.assertWorkspacePermission(principal, workspaceId, "admin");
+    const raw = asJsonObject(body, "workspace import");
+    if (raw.format_version !== 1) throw new ValidationError("format_version must be 1, the workspace export format");
+    const dryRun = optionalBoolean(raw.dry_run, "dry_run") ?? true;
+    const onConflict = parseEnum(raw.on_conflict, "on_conflict", ["skip", "fail"] as const, "skip");
+    const sourceWorkspace = optionalString(raw.workspace_id, "workspace_id") ?? null;
+    if (!Array.isArray(raw.memories)) throw new ValidationError("memories must be an array");
+    if (raw.sessions !== undefined && !Array.isArray(raw.sessions)) throw new ValidationError("sessions must be an array");
+    const rawSessions = (raw.sessions ?? []) as unknown[];
+    if (raw.memories.length > WORKSPACE_IMPORT_MAX_MEMORIES) throw new ValidationError(`An import holds at most ${WORKSPACE_IMPORT_MAX_MEMORIES} memories; split the export`);
+    if (rawSessions.length > WORKSPACE_IMPORT_MAX_SESSIONS) throw new ValidationError(`An import holds at most ${WORKSPACE_IMPORT_MAX_SESSIONS} sessions; split the export`);
+
+    const memories: MemoryRecord[] = [];
+    const seen = new Set<string>();
+    for (const [index, value] of raw.memories.entries()) {
+      const item = asJsonObject(value, `memories[${index}]`);
+      const id = requiredString(item.id, `memories[${index}].id`);
+      if (id.length > 256) throw new ValidationError(`memories[${index}].id is longer than 256 characters`);
+      requiredString(item.agent_id, `memories[${index}].agent_id`);
+      parseEnum(item.type, `memories[${index}].type`, ["episodic", "semantic", "procedural"] as const);
+      parseEnum(item.scope, `memories[${index}].scope`, ["private", "shared"] as const);
+      for (const field of ["created_at", "updated_at"] as const) {
+        if (typeof item[field] !== "string" || !Number.isFinite(Date.parse(item[field]))) throw new ValidationError(`memories[${index}].${field} must be a timestamp`);
+      }
+      const record = memoryRecordFromPayload({ ...item, workspace_id: workspaceId });
+      if (!record) throw new ValidationError(`memories[${index}].content is required`);
+      if (seen.has(record.id)) throw new ValidationError(`memories[${index}].id repeats an earlier memory`);
+      seen.add(record.id);
+      memories.push(record);
+    }
+    const sessions: SessionRecord[] = [];
+    const seenSessions = new Set<string>();
+    for (const [index, value] of rawSessions.entries()) {
+      const item = asJsonObject(value, `sessions[${index}]`);
+      const sessionId = requiredString(item.session_id, `sessions[${index}].session_id`);
+      if (seenSessions.has(sessionId)) throw new ValidationError(`sessions[${index}].session_id repeats an earlier session`);
+      seenSessions.add(sessionId);
+      const createdAt = requiredString(item.created_at, `sessions[${index}].created_at`);
+      if (!Number.isFinite(Date.parse(createdAt))) throw new ValidationError(`sessions[${index}].created_at must be a timestamp`);
+      const updatedAt = optionalString(item.updated_at, `sessions[${index}].updated_at`) ?? createdAt;
+      sessions.push({
+        session_id: sessionId,
+        owner_agent_id: requiredString(item.owner_agent_id, `sessions[${index}].owner_agent_id`),
+        scope: parseEnum(item.scope, `sessions[${index}].scope`, ["private", "shared"] as const, "private"),
+        title: optionalNullableString(item.title, `sessions[${index}].title`) ?? null,
+        workspace_id: workspaceId,
+        metadata: optionalJsonObject(item.metadata, `sessions[${index}].metadata`) ?? {},
+        created_at: createdAt,
+        updated_at: updatedAt,
+        deleted_at: optionalNullableString(item.deleted_at, `sessions[${index}].deleted_at`) ?? null,
+      });
+    }
+
+    // Same ID and same record: already imported. Same ID, anything else: a conflict.
+    const plan = <T>(records: T[], idOf: (record: T) => string, existing: (id: string) => T | undefined) => {
+      const add: T[] = []; let unchanged = 0; const conflicts: string[] = [];
+      for (const record of records) {
+        const current = existing(idOf(record));
+        if (!current) add.push(record);
+        else if (canonicalJson(current) === canonicalJson(record)) unchanged++;
+        else conflicts.push(idOf(record));
+      }
+      return { add, unchanged, conflicts };
+    };
+    const memoryPlan = plan(memories, (record) => record.id, (id) => this.memories.get(id));
+    const sessionPlan = plan(sessions, (record) => record.session_id, (id) => this.sessions.get(id));
+    const conflictCount = memoryPlan.conflicts.length + sessionPlan.conflicts.length;
+    if (conflictCount && onConflict === "fail") {
+      throw new ConflictError(`${conflictCount} imported record ID(s) already exist with different content; nothing was imported`);
+    }
+    if (!dryRun) {
+      for (const memory of memoryPlan.add) { this.ensureAgent(memory.agent_id); this.memories.set(memory.id, memory); }
+      for (const session of sessionPlan.add) this.sessions.set(session.session_id, session);
+      this.recordOperation("workspace.import", principal, { workspace_id: workspaceId, source_workspace_id: sourceWorkspace, memories: memoryPlan.add.length, sessions: sessionPlan.add.length, conflicts: conflictCount });
+      this.queuePersistence();
+    }
+    const summary = (part: { add: unknown[]; unchanged: number; conflicts: string[] }) => ({
+      [dryRun ? "would_import" : "imported"]: part.add.length,
+      unchanged: part.unchanged,
+      conflicts: part.conflicts.length,
+      conflict_ids: part.conflicts.slice(0, 100),
+    });
+    return { dry_run: dryRun, workspace_id: workspaceId, source_workspace_id: sourceWorkspace, on_conflict: onConflict, memories: summary(memoryPlan), sessions: summary(sessionPlan) };
   }
 
   pruneWorkspace(principal: AuthPrincipal, workspaceId: string, dryRun = true): Record<string, unknown> {

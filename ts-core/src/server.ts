@@ -49,6 +49,9 @@ export interface HiveMemServerOptions {
   readyCacheMs?: number;
 }
 
+/** Body limit of `POST /v1/admin/workspaces/:id/import` (or HIVEMEM_MAX_BODY_BYTES when larger). */
+const WORKSPACE_IMPORT_MAX_BODY_BYTES = 64 * 1024 * 1024;
+
 /** Marks principals authenticated by an Oathweave service token. */
 const OATHWEAVE_SERVICE_CREDENTIAL = "oathweave-service";
 
@@ -544,6 +547,8 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       (request as IncomingMessage & { hiveMaxBodyBytes?: number }).hiveMaxBodyBytes = maxBodyBytes;
       const host = request.headers.host ?? "localhost";
       const url = new URL(request.url ?? "/", `http://${host}`);
+      // A workspace export can exceed the ordinary limit. The body is read only after admin:all is checked.
+      if (/^\/v1\/admin\/workspaces\/[^/]+\/import$/u.test(url.pathname)) (request as IncomingMessage & { hiveMaxBodyBytes?: number }).hiveMaxBodyBytes = Math.max(maxBodyBytes, WORKSPACE_IMPORT_MAX_BODY_BYTES);
       const method = request.method ?? "GET";
 
       if (url.pathname.startsWith(HIVE_ADMIN_PROVISIONING_PATH)) {
@@ -1070,7 +1075,7 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
       }
       const workspaceImportId = url.pathname.endsWith("/import") ? pathId(url.pathname.slice(0, -"/import".length), "/v1/admin/workspaces/") : undefined;
       if (workspaceImportId && method === "POST") {
-        await sendJson(response, 200, store.importWorkspace(principal, workspaceImportId));
+        await sendJson(response, 200, store.importWorkspace(principal, workspaceImportId, await readBody(request)));
         return;
       }
       const workspacePruneId = url.pathname.endsWith("/prune") ? pathId(url.pathname.slice(0, -"/prune".length), "/v1/admin/workspaces/") : undefined;

@@ -223,6 +223,11 @@ function relationships(value: JsonValue | undefined): MemoryRecord["relationship
   });
 }
 
+/** A memory record from an untrusted payload, with the defaults a stored point gets. Null without content. */
+export function memoryRecordFromPayload(payload: JsonObject): MemoryRecord | null {
+  return normalizeMemoryRecord("import", null, payload);
+}
+
 function normalizeMemoryRecord(collection: string, pointId: unknown, payload: JsonObject): MemoryRecord | null {
   if (typeof payload.content !== "string" || !payload.content.trim()) return null;
   const timestamp = typeof payload.created_at === "string" ? payload.created_at : new Date(0).toISOString();

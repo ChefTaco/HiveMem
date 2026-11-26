@@ -181,7 +181,7 @@ multiply Qdrant probes and queue scans.
 | Admin | `POST` | `/v1/backup` | Unavailable (501); use root host-bound backup |
 | Admin | `POST` | `/v1/restore` | Unavailable (501); use isolated root recovery |
 | Admin | `GET` | `/v1/admin/workspaces/{workspace_id}/export` | Export portable workspace bundle |
-| Admin | `POST` | `/v1/admin/workspaces/{workspace_id}/import` | Unavailable (501) |
+| Admin | `POST` | `/v1/admin/workspaces/{workspace_id}/import` | Import a workspace export (dry run by default) |
 | Admin | `POST` | `/v1/admin/workspaces/{workspace_id}/prune` | Workspace-scoped soft-delete dry-run/apply |
 | Admin | `POST` | `/v1/admin/test-data/cleanup` | Unavailable (501) |
 | Admin | `POST` | `/v1/admin/prune` | Unavailable (501); use workspace retention/purge |
@@ -789,7 +789,30 @@ not produce a partial service-only archive through HTTP.
 
 `POST /v1/restore` is unavailable (501). Root restore stages and verifies an isolated recovery tree; it does not automatically restart production services.
 
-Workspace export returns `workspace_id`, readable current `memories`, accessible `sessions`, `exported_at`, and `format_version:1`. Import is unavailable (501).
+Workspace export returns `workspace_id`, readable current `memories`, accessible `sessions`, `exported_at`, and `format_version:1`.
+
+`POST /v1/admin/workspaces/{workspace_id}/import` (admin, and admin of the target workspace)
+loads such an export into an existing workspace, for moving or restoring a workspace between
+installations without a Qdrant-level restore. The body is the export, plus optional `dry_run`
+(default `true`) and `on_conflict` (`skip`, the default, or `fail`):
+
+```json
+{"format_version":1,"workspace_id":"research","memories":[...],"sessions":[...],"dry_run":false,"on_conflict":"skip"}
+```
+
+- Create the target workspace and its members first; import does not copy membership or settings.
+  Records move to the target workspace and keep their IDs, owners, scopes, sensitivity and
+  timestamps. Owners missing from this installation get an agent record without credentials.
+- A record whose ID is already stored identically is `unchanged`, so re-importing an export is
+  safe. One whose ID is stored differently (or in another workspace) is a conflict: `skip` leaves
+  it out, `fail` refuses the whole import with 409 and writes nothing. Conflicts never overwrite.
+- Nothing derived runs: no webhooks, extraction or consolidation jobs. Vectors are rebuilt with the
+  default token-hash embedding; rebuild a semantic shadow index separately if you use one.
+- The body may be up to 64 MiB (or `HIVEMEM_MAX_BODY_BYTES`, when larger) and hold up to 50 000
+  memories and 10 000 sessions; split larger exports into several imports.
+
+The answer reports `memories` and `sessions`, each with `imported` (`would_import` in a dry run),
+`unchanged`, `conflicts` and up to 100 `conflict_ids`. Success is returned after persistence.
 
 `GET /v1/admin/audit` requires admin authorization and reads persisted redacted operations, with pagination and supported workspace/action filters. It does not read the former Python JSONL audit log.
 

@@ -67,7 +67,7 @@ test('every advertised unavailable route returns 501 without changing complete s
   try {
     const response = await server.request('GET', '/v1/capabilities/operations'); assert.equal(response.status, 200);
     const { operations } = await response.json() as { operations: Array<{ id: string; state: string; routes: string[] }> };
-    const unavailable = operations.filter((entry) => entry.state === 'unavailable'); assert.equal(unavailable.length, 7);
+    const unavailable = operations.filter((entry) => entry.state === 'unavailable'); assert.equal(unavailable.length, 6);
     for (const operation of unavailable) for (const route of operation.routes) {
       const [method, template] = route.split(' '); const path = template!.replace(':id', 'fixture');
       const before = structuredClone(store.snapshot());
