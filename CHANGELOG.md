@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Side-effecting `POST` routes accept an `Idempotency-Key` header. A repeated key from the same
+  principal replays the first 2xx answer (`Idempotent-Replayed: true`) instead of writing again;
+  the answer is recorded before persistence is awaited, so a retry after an indeterminate `503`
+  replays once persistence recovers. A different request under the same key is `422`, a
+  concurrent one `409`. Records are process-local and expire after 24 hours.
+- The TypeScript and Python SDKs no longer retry a POST blindly after a 5xx: they send a
+  generated `Idempotency-Key` on every POST and retry only with one, back off exponentially with
+  jitter (the TypeScript SDK retried immediately), honour `Retry-After` and do not retry 501.
+- `/v1/health` reports `release` as this package's version. It reported `1.2.2` from a Hive 1.2.2
+  bundle manifest frozen in `ts-core/package.json`, which also listed retired components; the
+  manifest is gone, and `migrate` takes HiveMem's storage-format history from the code, with the
+  same schema checksum, so existing installations stay current.
+
+### Documentation
+
+- Corrected the architecture summary (workspace import answers 501; prune is retention prune),
+  the README's claim that health needs credentials, and a stale suite pin sentence.
+
 ## [1.9.1] - 2026-11-18
 
 ### Security

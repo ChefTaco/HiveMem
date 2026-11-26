@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import random
 import re
 import ssl
 import time
+import uuid
+from email.utils import parsedate_to_datetime
 from typing import Any
 from collections.abc import Callable
 from urllib.parse import urlsplit
@@ -15,6 +18,21 @@ import httpx
 
 from hivemem_sdk.context import ContextPackage
 from hivemem_sdk.errors import HiveMemHTTPError
+
+# Methods whose repetition has the same effect as one request.
+_IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    value = response.headers.get("retry-after", "").strip()
+    if not value:
+        return None
+    if value.isdigit():
+        return float(value)
+    try:
+        return max(0.0, parsedate_to_datetime(value).timestamp() - time.time())
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
 
 
 def _normalize_base_url(value: str | None) -> str:
@@ -66,6 +84,9 @@ class _BaseClient:
         workspace_id: str | None = None,
         timeout: float = 30.0,
         max_retries: int = 2,
+        retry_base_delay: float = 0.2,
+        retry_max_delay: float = 2.0,
+        idempotency_keys: bool = True,
         ca_file: str | None = None,
         request_id_provider: Callable[[], str] | None = None,
         auth_refresh: Callable[[], str | None] | None = None,
@@ -76,7 +97,14 @@ class _BaseClient:
         self.token = token or os.getenv("HIVEMEM_TOKEN") or os.getenv("HIVEMEM_MCP_TOKEN")
         self.workspace_id = workspace_id or os.getenv("HIVEMEM_WORKSPACE_ID") or "default"
         self.timeout = timeout
+        # Retries after a 5xx (other than 501): GET, HEAD, OPTIONS, PUT and DELETE, and a POST
+        # only when it carries an Idempotency-Key, so the server replays rather than repeats it.
         self.max_retries = max_retries
+        self.retry_base_delay = retry_base_delay
+        self.retry_max_delay = retry_max_delay
+        # Send a generated Idempotency-Key on every POST that has none. A server without support
+        # ignores the header; set False to send no key and never retry a POST.
+        self.idempotency_keys = idempotency_keys
         self.ca_file = str(ca_file or os.getenv("HIVEMEM_CA_FILE") or "").strip()
         self.request_id_provider = request_id_provider
         self.auth_refresh = auth_refresh
@@ -95,6 +123,29 @@ class _BaseClient:
         if self.request_id_provider:
             headers["X-Request-ID"] = self.request_id_provider()
         return headers
+
+    def _prepare_retry(self, method: str, kwargs: dict[str, Any]) -> bool:
+        """Add an Idempotency-Key to a POST when enabled; return whether the request may be retried."""
+        method = method.upper()
+        headers = dict(kwargs.get("headers") or {})
+        has_key = any(name.lower() in {"idempotency-key", "x-idempotency-key"} for name in headers)
+        if method == "POST" and self.idempotency_keys and not has_key:
+            # One key for every attempt, so the server can tell a retry from a new write.
+            headers["Idempotency-Key"] = str(uuid.uuid4())
+            kwargs["headers"] = headers
+            has_key = True
+        return method in _IDEMPOTENT_METHODS or has_key
+
+    def _should_retry(self, retryable: bool, response: httpx.Response, attempt: int) -> bool:
+        return retryable and response.status_code >= 500 and response.status_code != 501 and attempt < self.max_retries
+
+    def _retry_delay(self, attempt: int, response: httpx.Response) -> float:
+        """Exponential backoff with jitter; a server's Retry-After wins, capped at retry_max_delay."""
+        requested = _retry_after_seconds(response)
+        if requested is not None:
+            return min(requested, self.retry_max_delay)
+        ceiling = min(self.retry_max_delay, self.retry_base_delay * 2**attempt)
+        return ceiling / 2 + random.random() * ceiling / 2
 
     def _url(self, path: str) -> str:
         if not path.startswith("/"):
@@ -144,6 +195,7 @@ class HiveMemClient(_BaseClient):
         self.close()
 
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
+        retryable = self._prepare_retry(method, kwargs)
         for attempt in range(self.max_retries + 1):
             if self.auth_refresh:
                 refreshed = self.auth_refresh()
@@ -155,10 +207,11 @@ class HiveMemClient(_BaseClient):
             response = self._client.request(method, self._url(path), **kwargs)
             if self.on_response:
                 self.on_response(response)
-            if response.status_code < 500 or attempt == self.max_retries:
+            if not self._should_retry(retryable, response, attempt):
                 self._raise_for_status(response)
                 return self._json_or_none(response)
-            time.sleep(0.1 * (attempt + 1))
+            response.close()
+            time.sleep(self._retry_delay(attempt, response))
         return None
 
     def health(self) -> dict[str, Any]:
@@ -322,6 +375,7 @@ class AsyncHiveMemClient(_BaseClient):
         await self.close()
 
     async def request(self, method: str, path: str, **kwargs: Any) -> Any:
+        retryable = self._prepare_retry(method, kwargs)
         for attempt in range(self.max_retries + 1):
             if self.auth_refresh:
                 refreshed = self.auth_refresh()
@@ -333,10 +387,11 @@ class AsyncHiveMemClient(_BaseClient):
             response = await self._client.request(method, self._url(path), **kwargs)
             if self.on_response:
                 self.on_response(response)
-            if response.status_code < 500 or attempt == self.max_retries:
+            if not self._should_retry(retryable, response, attempt):
                 self._raise_for_status(response)
                 return self._json_or_none(response)
-            await _async_sleep(0.1 * (attempt + 1))
+            await response.aclose()
+            await _async_sleep(self._retry_delay(attempt, response))
         return None
 
     async def health(self) -> dict[str, Any]:

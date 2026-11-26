@@ -92,6 +92,26 @@ Workspace policy can override global sanitization defaults with `policy.sanitiza
 
 ## Endpoints
 
+### Idempotent Writes
+
+Authenticated `POST` routes that change state (memories, batches, sessions, knowledge sync,
+webhooks, workspaces, peers, queue actions and the like) accept an `Idempotency-Key` header
+(alias `X-Idempotency-Key`; 1-255 visible ASCII characters). Searches, context, chat, embedding
+and the token-issuing routes (`/v1/auth/*`, `/v1/actor-credentials/*`, `/v1/agents/register`)
+ignore it.
+
+- The first request with a key runs normally. Its 2xx answer is recorded for the calling
+  principal before persistence is awaited, so a retry after a `503` ("write outcome is
+  indeterminate") or a proxy error replays that answer, with `Idempotent-Replayed: true`, once
+  persistence is healthy, instead of writing again.
+- The same key with a different method, path, query or body is `422`. The same key while the
+  first request is still running is `409`. A malformed key is `400`.
+- A request that fails or answers non-2xx frees its key. Records live 24 hours in the server
+  process (bounded in count and size; a response over 1 MiB is not recorded) and are forgotten
+  on restart.
+
+Both SDKs send a generated key on every `POST` and retry a `POST` only when it carries a key.
+
 ### Current Route Inventory
 
 All REST API router paths below are mounted under `/v1`. Dashboard routes are mounted without the `/v1` prefix.
@@ -1013,6 +1033,12 @@ messages = context.to_openai()
 ### TypeScript SDK
 
 `@hivemagnus/hivemem-sdk` (source in `sdks/typescript`) is a fetch-based client for Node.js and browser-compatible runtimes, published on npm.
+
+Both SDKs retry a 5xx answer (not 501) up to `maxRetries` / `max_retries` (default 2) with
+exponential backoff and jitter, honouring `Retry-After`. GET, HEAD, OPTIONS, PUT and DELETE are
+retried; a POST only when it carries an `Idempotency-Key`, which the SDKs generate unless the
+caller supplies one or turns keys off (`idempotencyKeys: false` / `idempotency_keys=False`). See
+[Idempotent Writes](#idempotent-writes).
 
 ```bash
 npm install @hivemagnus/hivemem-sdk

@@ -259,3 +259,83 @@ test("HiveMem retries a 5xx response and releases the discarded response body", 
   assert.equal(responses.length, 2);
   assert.equal(responses[0].body.locked || responses[0].bodyUsed, true, "the retried response body is cancelled, not left unread");
 });
+
+const reply = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
+
+test("HiveMem retries a POST only with one Idempotency-Key for every attempt", async () => {
+  const keys = [];
+  const client = new HiveMem({
+    baseUrl: "https://hive.test",
+    retryBaseDelayMs: 1,
+    fetchImpl: async (_url, init) => {
+      keys.push(init.headers.get("idempotency-key"));
+      return keys.length === 1 ? reply({ detail: "Memory persistence unavailable; write outcome is indeterminate" }, 503) : reply({ id: "m1" }, 201);
+    },
+  });
+  const result = await client.createMemory({ content: "hello", type: "semantic", scope: "private" });
+  assert.equal(result.id, "m1");
+  assert.equal(keys.length, 2);
+  assert.match(keys[0], /^[\x21-\x7e]{1,255}$/);
+  assert.equal(keys[1], keys[0]);
+
+  await client.createMemory({ content: "again", type: "semantic", scope: "private" });
+  assert.notEqual(keys[2], keys[0], "Each logical write gets its own key");
+});
+
+test("HiveMem keeps a caller's Idempotency-Key", async () => {
+  let seen;
+  const client = new HiveMem({
+    baseUrl: "https://hive.test",
+    headers: () => ({ "Idempotency-Key": "caller-key" }),
+    fetchImpl: async (_url, init) => { seen = init.headers.get("idempotency-key"); return reply({ id: "m1" }, 201); },
+  });
+  await client.createMemory({ content: "hello" });
+  assert.equal(seen, "caller-key");
+});
+
+test("HiveMem never retries a POST without an Idempotency-Key", async () => {
+  let calls = 0;
+  const client = new HiveMem({
+    baseUrl: "https://hive.test",
+    idempotencyKeys: false,
+    retryBaseDelayMs: 1,
+    fetchImpl: async (_url, init) => { calls += 1; assert.equal(init.headers.has("idempotency-key"), false); return reply({ detail: "Bad gateway" }, 502); },
+  });
+  await assert.rejects(client.createMemory({ content: "hello" }), (error) => error.statusCode === 502);
+  assert.equal(calls, 1);
+});
+
+test("HiveMem backs off between retries of an idempotent method and skips 501", async () => {
+  const times = [];
+  const client = new HiveMem({
+    baseUrl: "https://hive.test",
+    retryBaseDelayMs: 40,
+    fetchImpl: async () => { times.push(Date.now()); return times.length < 3 ? reply({ detail: "busy" }, 503) : reply({ ok: true }); },
+  });
+  assert.deepEqual(await client.health(), { ok: true });
+  assert.equal(times.length, 3);
+  assert.ok(times[1] - times[0] >= 18, `first delay ${times[1] - times[0]}ms`);
+  assert.ok(times[2] - times[1] >= 38, `second delay ${times[2] - times[1]}ms`);
+
+  let unsupported = 0;
+  const notImplemented = new HiveMem({
+    baseUrl: "https://hive.test",
+    retryBaseDelayMs: 1,
+    fetchImpl: async () => { unsupported += 1; return reply({ detail: "Workspace import is unavailable" }, 501); },
+  });
+  await assert.rejects(notImplemented.health(), (error) => error.statusCode === 501);
+  assert.equal(unsupported, 1);
+});
+
+test("HiveMem honours Retry-After up to retryMaxDelayMs", async () => {
+  const times = [];
+  const client = new HiveMem({
+    baseUrl: "https://hive.test",
+    retryBaseDelayMs: 1,
+    retryMaxDelayMs: 60,
+    fetchImpl: async () => { times.push(Date.now()); return times.length === 1 ? reply({ detail: "busy" }, 503, { "retry-after": "120" }) : reply({ ok: true }); },
+  });
+  await client.health();
+  const delay = times[1] - times[0];
+  assert.ok(delay >= 55 && delay < 1000, `delay ${delay}ms`);
+});

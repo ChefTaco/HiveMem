@@ -14,7 +14,23 @@ export interface HiveMemOptions {
   token?: string;
   workspaceId?: string;
   timeoutMs?: number;
+  /**
+   * Retries after a 5xx answer (other than 501). GET, HEAD, OPTIONS, PUT and DELETE are retried;
+   * a POST only when it carries an `Idempotency-Key`, so the server replays rather than repeats
+   * the write. Default 2.
+   */
   maxRetries?: number;
+  /** First retry delay; each later one doubles, with jitter, up to `retryMaxDelayMs`. Default 200. */
+  retryBaseDelayMs?: number;
+  /** Longest delay between attempts, also the cap on a server's `Retry-After`. Default 2000. */
+  retryMaxDelayMs?: number;
+  /**
+   * Send a generated `Idempotency-Key` on every POST that has none (default true), which makes
+   * POSTs retryable. A HiveMem server with Idempotency-Key support replays the first result for
+   * a repeated key; an older server ignores the header. Set false to send no key and never retry
+   * a POST.
+   */
+  idempotencyKeys?: boolean;
   fetchImpl?: typeof fetch;
   requestIdProvider?: () => string;
   authRefresh?: () => string | undefined | Promise<string | undefined>;

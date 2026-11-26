@@ -115,7 +115,7 @@ The TypeScript core implements the REST contract:
   related, conflict, diff and graph helpers;
 - sessions, episodes, messages, context packing, deterministic chat and SSE chat;
 - queue status, retry, cancel, manual runs, archive and consolidation;
-- workspaces with members, settings, export, import and prune;
+- workspaces with members, settings, export and retention prune (import answers 501);
 - agents, profile bundles, peer cards, conclusions, representations and graph entities,
   relations and neighborhoods;
 - webhook endpoints, test emission and delivery history;
