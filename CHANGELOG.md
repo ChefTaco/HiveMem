@@ -61,6 +61,8 @@
 
 ### CI
 
+- `npm run check:doc-versions` (in CI) fails when a document other than the changelog names a
+  HiveMem image or SDK version other than the current one, so README examples cannot go stale.
 - Tests run on Node 24.22.3 and 26.13.1, audit production dependencies, and run the Python SDK
   and Hermes plugin suites (including the dual-stack contract against the built server).
 - Every third-party GitHub Action in CI and the image release is pinned to a commit SHA.

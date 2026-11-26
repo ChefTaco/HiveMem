@@ -1294,7 +1294,7 @@ reports that the process is running and checks no dependency.
   "status": "ok",
   "service": "hivemem-ts-core",
   "implementation": "typescript",
-  "version": "1.8.1",
+  "version": "<package version>",
   "persistence": { "ready": true, "mode": "qdrant", "pending": false, "last_success": "2026-11-17T09:00:00.000Z" },
   "worker": { "ready": true, "state": "idle", "managed": true, "enabled": true, "running": false, "pending_jobs": 0, "error": null },
   "capabilities": { "storage": "qdrant", "retrieval": "deterministic-lexical", "embedding": "hivemem-token-hash-v1", "queue": "managed" },

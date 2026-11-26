@@ -48,6 +48,7 @@ npm run typecheck
 npm run build
 npm test              # ts-core tests, SDK tests, script tests
 npm run check:openapi # docs/openapi.json matches the server
+npm run check:doc-versions # docs name only the current image and SDK versions
 npm run scan:secrets
 npm run check:private
 ```
