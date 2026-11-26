@@ -20,7 +20,7 @@ export interface OathweaveOptions {
 /** The parts of a verified user principal HiveMem uses. */
 export type OathweaveIdentity = Pick<
   OathweaveUserPrincipal,
-  "subject" | "issuer" | "sessionId" | "roles" | "permissions" | "displayName"
+  "subject" | "issuer" | "sessionId" | "tokenId" | "roles" | "permissions" | "displayName"
 >;
 /** The parts of a verified service principal HiveMem uses. */
 export type OathweaveServiceIdentity = Pick<
@@ -33,29 +33,55 @@ interface Overrides {
   fetch?: typeof fetch;
   /** Clock in epoch milliseconds. */
   now?: () => number;
-  /** Userinfo reuse window in milliseconds; 0 (the default) checks the session on every call. */
+  /**
+   * Userinfo reuse window in milliseconds, at most 5000. Defaults to
+   * `HIVEMEM_OATHWEAVE_SESSION_CACHE_DEFAULT_MS`; 0 checks the session on every call.
+   */
   sessionCacheMs?: number;
+  /** Seconds of clock skew tolerated on `exp`, `nbf` and `iat`, 0 to 60. Defaults to 5. */
+  clockToleranceSec?: number;
 }
 
-/** Longest userinfo reuse window an operator may opt into, so sign-out still takes effect within seconds. */
+/** Longest userinfo reuse window an operator may set, so sign-out still takes effect within seconds. */
 export const HIVEMEM_OATHWEAVE_SESSION_CACHE_MAX_MS = 5000;
+/** Userinfo reuse window when `HIVEMEM_OATHWEAVE_SESSION_CACHE_MS` is unset: sign-out applies within 3 s. */
+export const HIVEMEM_OATHWEAVE_SESSION_CACHE_DEFAULT_MS = 3000;
+/** Largest clock skew an operator may allow on Oathweave tokens. */
+export const HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_MAX_SEC = 60;
+/** Clock skew tolerated when `HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_SEC` is unset. */
+export const HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_DEFAULT_SEC = 5;
 
-/**
- * `HIVEMEM_OATHWEAVE_SESSION_CACHE_MS`: an opt-in userinfo reuse window, 0 to 5000 ms. Unset or 0
- * keeps the online session check on every request.
- */
-export function oathweaveSessionCacheMs(raw: string | undefined): number {
-  if (raw === undefined || raw.trim() === "") return 0;
+function boundedInteger(name: string, raw: string | undefined, fallback: number, max: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 0 || value > HIVEMEM_OATHWEAVE_SESSION_CACHE_MAX_MS)
-    throw new Error(`HIVEMEM_OATHWEAVE_SESSION_CACHE_MS must be an integer from 0 to ${HIVEMEM_OATHWEAVE_SESSION_CACHE_MAX_MS}`);
+  if (!Number.isInteger(value) || value < 0 || value > max) throw new Error(`${name} must be an integer from 0 to ${max}`);
   return value;
 }
 
 /**
- * Browser (user) tokens through the shared verifier, with HiveMem's established rules: no clock
- * tolerance, an online session check on every call (unless the operator opts into a reuse window
- * of at most five seconds), a required `roles` array and the `clientId` claim. Failure is closed.
+ * `HIVEMEM_OATHWEAVE_SESSION_CACHE_MS`: how long a userinfo answer is reused, 0 to 5000 ms.
+ * Unset means 3000; 0 checks the session online on every request.
+ */
+export function oathweaveSessionCacheMs(raw: string | undefined): number {
+  return boundedInteger("HIVEMEM_OATHWEAVE_SESSION_CACHE_MS", raw, HIVEMEM_OATHWEAVE_SESSION_CACHE_DEFAULT_MS, HIVEMEM_OATHWEAVE_SESSION_CACHE_MAX_MS);
+}
+
+/**
+ * `HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_SEC`: clock skew tolerated on `exp`, `nbf` and `iat`, 0 to
+ * 60 seconds. Unset means 5; 0 restores exact checks.
+ */
+export function oathweaveClockToleranceSec(raw: string | undefined): number {
+  return boundedInteger("HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_SEC", raw, HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_DEFAULT_SEC, HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_MAX_SEC);
+}
+
+const clamp = (value: number, max: number) => Math.min(Math.max(0, value), max);
+
+/**
+ * Browser (user) tokens through the shared verifier, with HiveMem's rules: a small clock tolerance
+ * (5 s by default, at most 60), an online session check whose answer is reused for at most five
+ * seconds (3 s by default, 0 checks every call), a required `roles` array and the `clientId`
+ * claim. The signature, audience and expiry are checked on every call; only the userinfo answer
+ * is reused. Failure is closed.
  */
 export function createOathweaveVerifier(options: OathweaveOptions, overrides: Overrides = {}) {
   const verifier = createSharedVerifier({
@@ -64,8 +90,8 @@ export function createOathweaveVerifier(options: OathweaveOptions, overrides: Ov
     jwksUrl: options.jwksUrl,
     userinfoUrl: options.userinfoUrl,
     accept: "user",
-    clockToleranceSec: 0,
-    sessionCacheTtlMs: Math.min(Math.max(0, overrides.sessionCacheMs ?? 0), HIVEMEM_OATHWEAVE_SESSION_CACHE_MAX_MS),
+    clockToleranceSec: clamp(overrides.clockToleranceSec ?? HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_DEFAULT_SEC, HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_MAX_SEC),
+    sessionCacheTtlMs: clamp(overrides.sessionCacheMs ?? HIVEMEM_OATHWEAVE_SESSION_CACHE_DEFAULT_MS, HIVEMEM_OATHWEAVE_SESSION_CACHE_MAX_MS),
     ...(overrides.keys ? { keys: overrides.keys } : {}),
     ...(overrides.fetch ? { fetch: overrides.fetch } : {}),
     ...(overrides.now ? { now: overrides.now } : {}),
@@ -116,7 +142,7 @@ function serviceIssuers(issuers: readonly string[]) {
 export function createOathweaveServiceVerifier(
   options: OathweaveServiceOptions,
   keys?: JWTVerifyGetKey,
-  overrides: Pick<Overrides, "now" | "fetch"> = {},
+  overrides: Pick<Overrides, "now" | "fetch" | "clockToleranceSec"> = {},
 ) {
   if (!options.issuers.length) throw new Error("At least one service issuer is required");
   if (!keys && !options.jwksUrl) throw new Error("OATHWEAVE_JWKS_URL is required for Oathweave tokens");
@@ -129,7 +155,7 @@ export function createOathweaveServiceVerifier(
     ...(keys ? { keys } : { jwksUrl: options.jwksUrl as string }),
     accept: "service",
     clientIdClaim: "clientId",
-    clockToleranceSec: 0,
+    clockToleranceSec: clamp(overrides.clockToleranceSec ?? HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_DEFAULT_SEC, HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_MAX_SEC),
     ...(overrides.now ? { now: overrides.now } : {}),
     ...(overrides.fetch ? { fetch: overrides.fetch } : {}),
   });
@@ -161,7 +187,10 @@ export function configuredOathweaveVerifier() {
         userinfoUrl: process.env.OATHWEAVE_USERINFO_URL,
         audience: HIVEMEM_OATHWEAVE_AUDIENCE,
       },
-      { sessionCacheMs: oathweaveSessionCacheMs(process.env.HIVEMEM_OATHWEAVE_SESSION_CACHE_MS) },
+      {
+        sessionCacheMs: oathweaveSessionCacheMs(process.env.HIVEMEM_OATHWEAVE_SESSION_CACHE_MS),
+        clockToleranceSec: oathweaveClockToleranceSec(process.env.HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_SEC),
+      },
     );
   }
   return verifier;
@@ -172,6 +201,8 @@ export function configuredOathweaveServiceVerifier(issuers: readonly string[]) {
   if (!process.env.OATHWEAVE_JWKS_URL) throw new Error("OATHWEAVE_JWKS_URL is required for Oathweave tokens");
   serviceVerifier ??= createOathweaveServiceVerifier(
     { issuers, audience: HIVEMEM_OATHWEAVE_AUDIENCE, jwksUrl: process.env.OATHWEAVE_JWKS_URL },
+    undefined,
+    { clockToleranceSec: oathweaveClockToleranceSec(process.env.HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_SEC) },
   );
   return serviceVerifier;
 }

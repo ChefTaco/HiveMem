@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- Oathweave tokens now get 5 seconds of clock tolerance on `exp`, `nbf` and `iat` (it was
+  none), for browser and service tokens alike. Set `HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_SEC=0`
+  to keep exact checks.
+- `HIVEMEM_OATHWEAVE_SESSION_CACHE_MS` now defaults to `3000` (it was `0`), so a signed-out
+  browser session can keep working for up to 3 seconds. Set it to `0` to check the session on
+  every request again. Existing sign-ins, tokens and account links are unaffected.
+- Migrations: none. Revocation list entries are now kept 60 seconds past their token's expiry;
+  the file format is unchanged and older releases read it as before.
+
+### Changed
+
+- Oathweave verification allows a bounded clock skew, `HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_SEC`
+  (0-60, default 5), in both the browser and the service verifier.
+- The Oathweave userinfo answer is reused for 3 seconds by default
+  (`HIVEMEM_OATHWEAVE_SESSION_CACHE_MS`, still 0-5000). HiveXUI's parallel memory requests no
+  longer each cost an Oathweave session check.
+- A browser token whose `jti` is in the revocation list is refused on every request, cached
+  session answer or not, as service tokens already were. Revocations outlive their token's
+  expiry by 60 seconds so the clock tolerance cannot readmit a revoked token.
+- Both settings are listed by `hivemem-server env-schema`.
+
 ## [1.11.0] - 2026-11-26
 
 ### Upgrade notes

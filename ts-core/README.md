@@ -187,7 +187,8 @@ also reads these:
 | `HIVEMEM_WEBHOOK_CA_FILE` | system CA store | PEM trust anchor for webhook receivers. |
 | `HIVEMEM_INITIAL_ACCOUNT_FILE` | unset | First-start identity file for fresh suite installs (see the [repository README](../README.md#fresh-suite-initialization)). |
 | `OATHWEAVE_ISSUER`, `OATHWEAVE_JWKS_URL`, `OATHWEAVE_USERINFO_URL`, `HIVEMEM_OATHWEAVE_IDENTITIES_JSON`, `HIVEMEM_OATHWEAVE_SERVICES_JSON` | unset | Suite sign-in and service tokens. See [docs/OATHWEAVE.md](../docs/OATHWEAVE.md). |
-| `HIVEMEM_OATHWEAVE_SESSION_CACHE_MS` | `0` | Opt-in userinfo reuse window for browser sessions, at most `5000`. `0` checks the session on every request. |
+| `HIVEMEM_OATHWEAVE_SESSION_CACHE_MS` | `3000` | How long a userinfo answer is reused for browser sessions, at most `5000`. A sign-out applies within this window; `0` checks the session on every request. Revoked token IDs are refused on every request regardless. |
+| `HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_SEC` | `5` | Clock skew tolerated on Oathweave token `exp`, `nbf` and `iat`, at most `60`. `0` checks the times exactly. |
 | `HIVE_ADMIN_PROVISIONING_SECRET` | unset | Enables the installer-only administrator provisioning endpoint. See [docs/OATHWEAVE.md](../docs/OATHWEAVE.md#guided-installation-owned-administrator-setup). |
 | `HIVEMEM_DEBUG` | `false` | `true` prints stack traces for unexpected CLI errors. |
 
