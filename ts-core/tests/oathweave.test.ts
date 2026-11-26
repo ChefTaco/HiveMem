@@ -4,7 +4,10 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { createHiveMemHandler } from "../src/server.js";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
-import { createOathweaveServiceVerifier, createOathweaveVerifier, oathweaveSessionCacheMs } from "../src/identity.js";
+import { createOathweaveServiceVerifier, createOathweaveVerifier, oathweaveClockToleranceSec, oathweaveSessionCacheMs } from "../src/identity.js";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseAccountLinks } from "../src/account-links.js";
 import { InMemoryHiveMemStore } from "../src/store.js";
 import { signToken } from "../src/auth.js";
@@ -22,6 +25,7 @@ test("resource verification rejects wrong audiences and revoked sessions", async
   };
   let online = true;
   const verify = createOathweaveVerifier(config, {
+    sessionCacheMs: 0,
     keys: createLocalJWKSet({
       keys: [{ ...(await exportJWK(keys.publicKey)), kid: "test" }],
     }),
@@ -70,6 +74,7 @@ test("HTTP keeps identity reads scoped and prevents role-based write escalation"
       subject: "fake-user",
       issuer: "https://identity.example.com",
       sessionId: "fake-session",
+      tokenId: "fake-jti",
       roles: ["SUPER_ADMIN"],
       permissions: ["hivemem:memories:read"],
       displayName: "Test User",
@@ -129,7 +134,7 @@ test('browser links require an existing active account and the reviewed credenti
   const secret='f'.repeat(64);
   const store=new InMemoryHiveMemStore();
   const link={issuer:'https://identity.example.com',subject:'fake-user',localId:'existing-agent',credentialGeneration:1};
-  const handler=createHiveMemHandler({jwtSecret:secret,store,oathweaveAccountLinks:[link],verifyOathweave:async()=>({...link,sessionId:'fake-session',roles:[],permissions:['hivemem:memories:read'],displayName:'Synthetic person'})});
+  const handler=createHiveMemHandler({jwtSecret:secret,store,oathweaveAccountLinks:[link],verifyOathweave:async()=>({...link,sessionId:'fake-session',tokenId:'fake-jti',roles:[],permissions:['hivemem:memories:read'],displayName:'Synthetic person'})});
   const server=createServer(handler).listen(0,'127.0.0.1');
   await once(server,'listening');
   const address=server.address();
@@ -167,7 +172,7 @@ test("an account link's scopes cap what Oathweave grants, including admin", asyn
   const links: Array<{ issuer: string; subject: string; localId: string; scopes?: string[] }> = [{ issuer, subject: "fake-user", localId: "capped-agent", scopes: ["memories:read"] }];
   const handler = createHiveMemHandler({
     store, jwtSecret: "f".repeat(64), oathweaveAccountLinks: links,
-    verifyOathweave: async () => ({ subject: "fake-user", issuer, sessionId: "fake-session", roles: ["SUPER_ADMIN"], permissions, displayName: "Synthetic person" }),
+    verifyOathweave: async () => ({ subject: "fake-user", issuer, sessionId: "fake-session", tokenId: "fake-jti", roles: ["SUPER_ADMIN"], permissions, displayName: "Synthetic person" }),
   });
   const server = createServer(handler).listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -206,10 +211,12 @@ test("account links accept only well-formed scope ceilings", () => {
   for (const scopes of [[], ["Memories:Read"], ["memories read"], "memories:read"]) assert.throws(() => parseAccountLinks(JSON.stringify([{ ...base, scopes }])));
 });
 
-test("the userinfo reuse window is opt-in and capped at five seconds", async () => {
-  assert.equal(oathweaveSessionCacheMs(undefined), 0);
-  assert.equal(oathweaveSessionCacheMs(""), 0);
+test("the userinfo reuse window defaults to three seconds and is capped at five", async () => {
+  assert.equal(oathweaveSessionCacheMs(undefined), 3000);
+  assert.equal(oathweaveSessionCacheMs(""), 3000);
+  assert.equal(oathweaveSessionCacheMs("0"), 0, "0 restores the check on every request");
   assert.equal(oathweaveSessionCacheMs("2000"), 2000);
+  assert.equal(oathweaveSessionCacheMs("5000"), 5000);
   for (const raw of ["-1", "5001", "1.5", "abc", "60000"]) assert.throws(() => oathweaveSessionCacheMs(raw), /HIVEMEM_OATHWEAVE_SESSION_CACHE_MS/);
 
   const keys = await generateKeyPair("RS256");
@@ -219,21 +226,87 @@ test("the userinfo reuse window is opt-in and capped at five seconds", async () 
     .setProtectedHeader({ alg: "RS256", kid: "test" }).setSubject("fake-user").setIssuer(config.issuer).setAudience("hivemem")
     .setJti("fake-jti").setIssuedAt(Math.floor(clock / 1000)).setExpirationTime(Math.floor(clock / 1000) + 300).sign(keys.privateKey);
   const local = createLocalJWKSet({ keys: [{ ...(await exportJWK(keys.publicKey)), kid: "test" }] });
-  for (const [sessionCacheMs, expected] of [[undefined, 3], [0, 3], [3000, 1]] as const) {
+  for (const [sessionCacheMs, expected] of [[undefined, 1], [0, 3], [3000, 1]] as const) {
     let calls = 0;
     const verify = createOathweaveVerifier(config, { keys: local, now: () => clock, ...(sessionCacheMs === undefined ? {} : { sessionCacheMs }), fetch: async () => { calls++; return Response.json({ sub: "fake-user" }); } });
     for (let index = 0; index < 3; index++) await verify(token);
     assert.equal(calls, expected, `session cache ${String(sessionCacheMs)}`);
   }
-  // Past the window the session is checked again, so a sign-out still lands within seconds.
+  // Past the default window the session is checked again, so a sign-out lands within 3 s.
   let calls = 0;
   let online = true;
-  const verify = createOathweaveVerifier(config, { keys: local, now: () => clock, sessionCacheMs: 3000, fetch: async () => { calls++; return online ? Response.json({ sub: "fake-user" }) : new Response("", { status: 401 }); } });
+  const verify = createOathweaveVerifier(config, { keys: local, now: () => clock, fetch: async () => { calls++; return online ? Response.json({ sub: "fake-user" }) : new Response("", { status: 401 }); } });
   await verify(token);
   online = false;
-  clock += 3500;
+  clock += 2500;
+  await verify(token);
+  assert.equal(calls, 1, "a signed-out session may keep working inside the window");
+  clock += 1000;
   await assert.rejects(verify(token));
   assert.equal(calls, 2);
+  // A refused check is not reused as a success.
+  online = true;
+  await assert.rejects(verify(token));
+});
+
+test("the Oathweave clock tolerance defaults to five seconds and is capped at sixty", () => {
+  assert.equal(oathweaveClockToleranceSec(undefined), 5);
+  assert.equal(oathweaveClockToleranceSec(" "), 5);
+  assert.equal(oathweaveClockToleranceSec("0"), 0);
+  assert.equal(oathweaveClockToleranceSec("60"), 60);
+  for (const raw of ["-1", "61", "2.5", "abc", "300"]) assert.throws(() => oathweaveClockToleranceSec(raw), /HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_SEC/);
+});
+
+test("a revoked token ID is refused on every request, even while its session answer is cached", async () => {
+  const keys = await generateKeyPair("RS256");
+  const issuer = "https://identity.example.com";
+  const config = { issuer, jwksUrl: issuer + "/jwks", userinfoUrl: issuer + "/userinfo", audience: "hivemem" };
+  const now = Math.floor(Date.now() / 1000);
+  const sign = (jti: string) => new SignJWT({ actorType: "USER", sessionId: "fake-session", clientId: "hivexui-hivemem", roles: [], permissions: ["hivemem:memories:read"] })
+    .setProtectedHeader({ alg: "RS256", kid: "test" }).setSubject("fake-user").setIssuer(issuer).setAudience("hivemem")
+    .setJti(jti).setIssuedAt(now).setExpirationTime(now + 300).sign(keys.privateKey);
+  let userinfoCalls = 0;
+  // One verifier, so both handlers share its userinfo cache.
+  const verify = createOathweaveVerifier(config, {
+    keys: createLocalJWKSet({ keys: [{ ...(await exportJWK(keys.publicKey)), kid: "test" }] }),
+    sessionCacheMs: 5000,
+    fetch: async () => { userinfoCalls++; return Response.json({ sub: "fake-user" }); },
+  });
+  const revoked = await sign("revoked-browser-jti");
+  const kept = await sign("kept-browser-jti");
+  const directory = await mkdtemp(join(tmpdir(), "hivemem-oathweave-revoked-"));
+  const revocationFilePath = join(directory, "revoked.json");
+  await writeFile(revocationFilePath, JSON.stringify({ "revoked-browser-jti": now + 300 }), { mode: 0o600 });
+  const servers: ReturnType<typeof createServer>[] = [];
+  const start = async (options: { revocationFilePath?: string }) => {
+    const store = new InMemoryHiveMemStore();
+    store.registerAgent(operator, { agent_id: "existing-agent", display_name: "Synthetic existing agent" }, "obviously-fake-native-token");
+    const server = createServer(createHiveMemHandler({
+      store, jwtSecret: "f".repeat(64), verifyOathweave: verify,
+      oathweaveAccountLinks: [{ issuer, subject: "fake-user", localId: "existing-agent" }], ...options,
+    })).listen(0, "127.0.0.1");
+    servers.push(server);
+    await once(server, "listening");
+    const address = server.address();
+    assert(address && typeof address === "object");
+    return (token: string) => fetch(`http://127.0.0.1:${address.port}/v1/memories/browse`, { headers: { Authorization: `Bearer ${token}` } });
+  };
+  try {
+    const open = await start({ revocationFilePath: join(directory, "none.json") });
+    assert.equal((await open(revoked)).status, 200, "warms the session cache");
+    assert.equal(userinfoCalls, 1);
+    const guarded = await start({ revocationFilePath });
+    assert.equal((await guarded(revoked)).status, 401);
+    assert.equal(userinfoCalls, 1, "refused although the cached session answer was still fresh");
+    assert.equal((await guarded(kept)).status, 200);
+    assert.equal((await guarded(revoked)).status, 401);
+  } finally {
+    for (const server of servers) {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    }
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("service tokens are checked against the configured JWKS endpoint by the shared verifier", async () => {

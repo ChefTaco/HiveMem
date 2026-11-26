@@ -285,6 +285,8 @@ export function envSchema(): EnvSchema {
       { name: "HIVEMEM_EMBEDDING_REVISION", required: false, secret: false, description: "Model revision label; changing it isolates vectors from a different model build." },
       { name: "HIVEMEM_EMBEDDING_DIMENSIONS", required: false, secret: false, description: "Embedding vector size returned by the model (1-8192)." },
       { name: "HIVEMEM_SEARCH_RATE_LIMIT_PER_MINUTE", required: false, secret: false, default: "600", description: "Search, context, chat and conflict-scan requests per principal per minute (token bucket). 0 turns the limit off." },
+      { name: "HIVEMEM_OATHWEAVE_SESSION_CACHE_MS", required: false, secret: false, default: "3000", description: "How long an Oathweave userinfo answer is reused for browser sessions, 0-5000 ms. A sign-out applies within this window; 0 checks the session on every request. Revoked token IDs are refused on every request." },
+      { name: "HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_SEC", required: false, secret: false, default: "5", description: "Clock skew tolerated on Oathweave token exp, nbf and iat, 0-60 seconds. 0 checks the times exactly." },
       { name: "HIVEMEM_SEMANTIC_COLLECTION", required: false, secret: false, description: "Qdrant collection for the semantic shadow index; must start with hivemem_shadow_." },
     ],
   };

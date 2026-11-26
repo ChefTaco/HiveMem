@@ -2,6 +2,12 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 
+/**
+ * Seconds a revocation outlives its token's `exp`. Oathweave tokens are accepted up to the
+ * configured clock tolerance (at most 60 s) after `exp`, so the entry must stay that long.
+ */
+export const REVOCATION_RETAIN_AFTER_EXPIRY_SEC = 60;
+
 export class TokenRevocationStore {
   private readonly revoked = new Map<string, number>();
 
@@ -22,7 +28,7 @@ export class TokenRevocationStore {
   has(jti: string): boolean {
     const expiresAt = this.revoked.get(jti);
     if (expiresAt === undefined) return false;
-    if (expiresAt <= Math.floor(Date.now() / 1000)) {
+    if (expiresAt + REVOCATION_RETAIN_AFTER_EXPIRY_SEC <= Math.floor(Date.now() / 1000)) {
       this.revoked.delete(jti);
       this.persist();
       return false;
@@ -40,7 +46,7 @@ export class TokenRevocationStore {
     const now = Math.floor(Date.now() / 1000);
     let changed = false;
     for (const [jti, exp] of this.revoked) {
-      if (exp <= now) {
+      if (exp + REVOCATION_RETAIN_AFTER_EXPIRY_SEC <= now) {
         this.revoked.delete(jti);
         changed = true;
       }

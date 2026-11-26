@@ -7,17 +7,36 @@ selected in Oathweave, not an inferred native JWT issuer. TLS verification and
 online session revocation are mandatory. Tokens have one exact product audience
 and a maximum fifteen-minute lifetime. Permissions are not inferred from roles.
 Native machine credentials and standalone authentication remain available.
-Verification uses the shared `@hivemagnus/hive-common` Oathweave verifier with no
-clock tolerance and an online session check on every request; tokens must carry a
+Verification uses the shared `@hivemagnus/hive-common` Oathweave verifier; tokens must carry a
 `roles` array and a `clientId` claim. The shared verifier fetches and caches
 `OATHWEAVE_JWKS_URL` itself (bounded cache age, a cooldown on unknown key IDs, no
-redirects, request timeouts).
+redirects, request timeouts). The signature, audience, issuer and token times are checked
+on every request.
 
-An operator may opt into reusing a userinfo answer for up to five seconds with
-`HIVEMEM_OATHWEAVE_SESSION_CACHE_MS` (an integer from `0` to `5000`; unset or `0`
-keeps the check on every request). HiveXUI memory pages send several requests at once,
-so a window of 2000-5000 ms cuts Oathweave load while a signed-out session still stops
-working within that window. A failed check is never reused as a success.
+## Clock tolerance
+
+Browser and service tokens are accepted up to 5 seconds outside their `exp`, `nbf` and
+`iat` times, so a few seconds of clock drift between Oathweave and HiveMem does not refuse
+fresh tokens. `HIVEMEM_OATHWEAVE_CLOCK_TOLERANCE_SEC` (an integer from `0` to `60`; unset
+means `5`) changes it, and `0` restores exact checks. The fifteen-minute lifetime limit is
+unchanged. Keep host clocks synchronized (NTP) rather than raising the tolerance.
+
+## Session check and sign-out
+
+User tokens are also checked online at `OATHWEAVE_USERINFO_URL`, and the answer for a token
+is reused for 3 seconds by default. HiveXUI memory pages send several requests at once, so
+this cuts Oathweave load to about one check per token every few seconds. The trade-off: a
+signed-out session can keep working for up to 3 seconds after sign-out.
+`HIVEMEM_OATHWEAVE_SESSION_CACHE_MS` (an integer from `0` to `5000`; unset means `3000`)
+sets the window, and `0` checks the session on every request. A failed check is never
+reused as a success.
+
+Revocation does not wait for the window. A token whose ID (`jti`) is in HiveMem's
+revocation list (`HIVEMEM_REVOCATION_FILE`) is refused on every request, browser or service
+token, whether or not its session answer is cached. A revocation is kept for 60 seconds past
+its token's expiry, which covers the largest clock tolerance.
+
+## Account links
 
 `HIVEMEM_OATHWEAVE_IDENTITIES_JSON` is a protected JSON array of explicit account links:
 

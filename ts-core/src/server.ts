@@ -608,6 +608,8 @@ export function createHiveMemHandler(options: HiveMemServerOptions = {}): HiveMe
           if (!verifyIdentity) throw new AuthError(401, 'Invalid or revoked identity session');
           let identity: OathweaveIdentity;
           try { identity=await verifyIdentity(supplied); } catch { throw new AuthError(401,'Invalid or revoked identity session'); }
+          // Checked on every request: the userinfo reuse window never lets a revoked token through.
+          if (isRevoked(identity.tokenId)) throw new AuthError(401, 'JWT has been revoked');
           let link: AccountLink;
           try {link=linkedAccount(accountLinks,identity);} catch {throw new AuthError(403,'An explicit memory account link is required');}
           const agentId = link.localId;

@@ -32,16 +32,15 @@ test("user-token refusals carry the shared reasons", async () => {
   assert.equal(report.passed, userVectors.length);
 });
 
-test("user tokens keep HiveMem's rules: roles and clientId required, no clock tolerance, session checked every call", async () => {
+test("user tokens keep HiveMem's rules: roles and clientId required, small clock tolerance, short session reuse", async () => {
   const keys = await generateKeyPair("RS256");
   const jwks = createLocalJWKSet({ keys: [{ ...(await exportJWK(keys.publicKey)), kid: "test" }] });
   const issuer = "https://identity.example.com";
   let userinfoCalls = 0;
-  const verify = createOathweaveVerifier(
-    { issuer, jwksUrl: issuer + "/jwks", userinfoUrl: issuer + "/userinfo", audience: "hivemem" },
-    { keys: jwks, fetch: async () => { userinfoCalls += 1; return Response.json({ sub: "fake-user" }); } },
-  );
+  const config = { issuer, jwksUrl: issuer + "/jwks", userinfoUrl: issuer + "/userinfo", audience: "hivemem" };
+  const userinfo = async () => { userinfoCalls += 1; return Response.json({ sub: "fake-user" }); };
   const now = Math.floor(Date.now() / 1000);
+  const clock = () => now * 1000;
   const sign = (claims: JWTPayload, omit: string[] = [], iat = now) => {
     const payload: JWTPayload = { actorType: "USER", sessionId: "fake-session", clientId: "hivexui-hivemem", roles: [], permissions: ["hivemem:memories:read"], ...claims };
     for (const name of omit) delete payload[name];
@@ -51,14 +50,32 @@ test("user tokens keep HiveMem's rules: roles and clientId required, no clock to
       .setIssuedAt(iat).setExpirationTime(iat + 300)
       .sign(keys.privateKey);
   };
+  // Defaults: 5 s clock tolerance, userinfo answer reused for 3 s.
+  const verify = createOathweaveVerifier(config, { keys: jwks, fetch: userinfo, now: clock });
   const valid = await sign({});
   assert.equal((await verify(valid)).subject, "fake-user");
   await verify(valid);
-  assert.equal(userinfoCalls, 2, "no session cache window");
+  assert.equal(userinfoCalls, 1, "the session answer is reused inside the window");
   await assert.rejects(verify(await sign({}, ["roles"])));
   await assert.rejects(verify(await sign({ client_id: "hivexui-hivemem" }, ["clientId"])));
-  await assert.rejects(verify(await sign({}, [], now + 10)), "a token issued in the future is refused without tolerance");
-  await assert.rejects(verify(await sign({}, [], now - 305)), "an expired token is refused without tolerance");
+  await verify(await sign({}, [], now + 4));
+  await verify(await sign({}, [], now - 304));
+  await assert.rejects(verify(await sign({}, [], now + 10)), "a token issued beyond the tolerance is refused");
+  await assert.rejects(verify(await sign({}, [], now - 310)), "a token expired beyond the tolerance is refused");
+
+  // 0 and 0 restore exact times and a session check on every call.
+  userinfoCalls = 0;
+  const strict = createOathweaveVerifier(config, { keys: jwks, fetch: userinfo, now: clock, clockToleranceSec: 0, sessionCacheMs: 0 });
+  await strict(valid);
+  await strict(valid);
+  assert.equal(userinfoCalls, 2, "no session cache window");
+  await assert.rejects(strict(await sign({}, [], now + 4)), "a token issued in the future is refused without tolerance");
+  await assert.rejects(strict(await sign({}, [], now - 304)), "an expired token is refused without tolerance");
+
+  // Out-of-range overrides are clamped to the bounds, never widened.
+  const clamped = createOathweaveVerifier(config, { keys: jwks, fetch: userinfo, now: clock, clockToleranceSec: 3600 });
+  await clamped(await sign({}, [], now - 350));
+  await assert.rejects(clamped(await sign({}, [], now - 370)), "tolerance is capped at 60 s");
 });
 
 test("service tokens must name their client in clientId", async () => {
@@ -72,4 +89,24 @@ test("service tokens must name their client in clientId", async () => {
     .sign(keys.privateKey);
   assert.equal((await verify(await sign({ clientId: "fake-service" }))).clientId, "fake-service");
   await assert.rejects(verify(await sign({ client_id: "fake-service" })));
+});
+
+test("service tokens get the same clock tolerance, and 0 restores exact times", async () => {
+  const keys = await generateKeyPair("RS256");
+  const jwks = createLocalJWKSet({ keys: [{ ...(await exportJWK(keys.publicKey)), kid: "test" }] });
+  const now = Math.floor(Date.now() / 1000);
+  const clock = () => now * 1000;
+  const sign = (iat: number) => new SignJWT({ actorType: "SERVICE_ACCOUNT", token_type: "access", permissions: ["hivemem:memories:read"], clientId: "fake-service" })
+    .setProtectedHeader({ alg: "RS256", kid: "test" })
+    .setSubject("fake-service").setIssuer("hive-iam").setAudience("hivemem").setJti("fake-jti")
+    .setIssuedAt(iat).setExpirationTime(iat + 300)
+    .sign(keys.privateKey);
+  const verify = createOathweaveServiceVerifier({ issuers: ["hive-iam"], audience: "hivemem" }, jwks, { now: clock });
+  await verify(await sign(now + 4));
+  await verify(await sign(now - 304));
+  await assert.rejects(verify(await sign(now + 10)));
+  await assert.rejects(verify(await sign(now - 310)));
+  const strict = createOathweaveServiceVerifier({ issuers: ["hive-iam"], audience: "hivemem" }, jwks, { now: clock, clockToleranceSec: 0 });
+  await assert.rejects(strict(await sign(now + 4)));
+  await assert.rejects(strict(await sign(now - 304)));
 });
